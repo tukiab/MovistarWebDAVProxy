@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -26,7 +25,7 @@ const (
 	OAuthRedirectURI  = "https://micloud.movistar.es/ui/html/clientoauth.html"
 	ClientPlatform    = "windows"
 	DesktopUserAgent  = "omh windows client 32.1.3.0"
-	SAPIUserAgent     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0"
+	SAPIUserAgent     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 	SAPIBaseURL       = "https://micloud.movistar.es/sapi"
 )
 
@@ -80,6 +79,9 @@ var (
 )
 
 func GetOAuthAuthorizeURL(provider string) string {
+	if env := strings.TrimSpace(os.Getenv("OAUTH_AUTHORIZE_URL")); env != "" {
+		return env
+	}
 	if strings.EqualFold(provider, "o2") {
 		return "https://apiseg.telefonica.es/openid/connect/auth/oauth/v2/o2/cus/authorize"
 	}
@@ -87,6 +89,9 @@ func GetOAuthAuthorizeURL(provider string) string {
 }
 
 func GetOAuthTokenURL(provider string) string {
+	if env := strings.TrimSpace(os.Getenv("OAUTH_TOKEN_URL")); env != "" {
+		return env
+	}
 	if strings.EqualFold(provider, "o2") {
 		return "https://apiseg.telefonica.es/openid/connect/auth/oauth/v2/o2/cus/token"
 	}
@@ -195,6 +200,9 @@ func primeSAPILoginSession(client *http.Client, sessionURL string) (SAPILoginSes
 }
 
 func GetSAPIBaseURL(provider string) string {
+	if env := strings.TrimSpace(os.Getenv("SAPI_BASE_URL")); env != "" {
+		return env
+	}
 	if strings.EqualFold(provider, "o2") {
 		return "https://cloud.o2online.es/sapi"
 	}
@@ -241,6 +249,7 @@ type SAPILoginResult struct {
 	JSessionID          string
 	RefreshedOAuth      *RotatedOAuth
 	LastRefreshDate     int64
+	ResponseTime        int64
 	RawResponse         string
 	RequestURL          string
 	Protocol            string
@@ -284,13 +293,22 @@ func mustRandRead(b []byte) {
 	}
 }
 
+// SanitizeDeviceID normaliza identificadores heredados `fol-...` (con caracteres
+// base64 `+`, `/`, `=`) al formato `web-...` aceptado por CloudFront WAF.
+func SanitizeDeviceID(devID string) string {
+	devID = strings.TrimSpace(devID)
+	if strings.HasPrefix(devID, "fol-") {
+		clean := strings.TrimPrefix(devID, "fol-")
+		clean = strings.NewReplacer("+", "", "/", "", "=", "").Replace(clean)
+		return "web-" + clean
+	}
+	return devID
+}
+
 func GenerateDeviceID() string {
 	b := make([]byte, 16)
 	mustRandRead(b)
-	seed := fmt.Sprintf("PC+%x", b)
-	h := md5.Sum([]byte(seed))
-	b64 := base64.StdEncoding.EncodeToString(h[:])
-	return fmt.Sprintf("fol-%s", b64)
+	return fmt.Sprintf("web-%x", b)
 }
 
 func GeneratePKCE() (verifier, challenge string) {
@@ -602,8 +620,13 @@ func sapiLoginOAuthRequest(client *http.Client, sapiBaseURL, authorization, user
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "*/*")
+	if parsedEndpoint, parseErr := url.Parse(endpoint); parseErr == nil && parsedEndpoint.Host != "" {
+		req.Header.Set("Referer", parsedEndpoint.Scheme+"://"+parsedEndpoint.Host+"/")
+	}
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("Accept-Language", "es-ES,es;q=0.9,en;q=0.8")
 	if deviceID != "" {
-		req.Header.Set("X-deviceid", deviceID)
+		req.Header.Set("X-deviceid", SanitizeDeviceID(deviceID))
 	}
 	if deviceName != "" {
 		req.Header.Set("X-devicename", deviceName)
@@ -641,16 +664,34 @@ func sapiLoginOAuthRequest(client *http.Client, sapiBaseURL, authorization, user
 	// 2. Extraer cookies de sesión
 	for _, cookie := range resp.Cookies() {
 		result.ResponseCookieNames = append(result.ResponseCookieNames, cookie.Name)
-		if cookie.Name == "validationkey" {
+		if strings.EqualFold(cookie.Name, "validationkey") {
 			result.ValidationKey = cookie.Value
-		} else if cookie.Name == "JSESSIONID" {
+		} else if strings.EqualFold(cookie.Name, "JSESSIONID") {
 			result.JSessionID = cookie.Value
+		}
+	}
+	if result.StatusCode == http.StatusOK && client != nil && client.Jar != nil {
+		for _, u := range []*url.URL{req.URL, {Scheme: req.URL.Scheme, Host: req.URL.Host, Path: "/"}} {
+			if u == nil || u.Host == "" {
+				continue
+			}
+			for _, cookie := range client.Jar.Cookies(u) {
+				if result.ValidationKey == "" && strings.EqualFold(cookie.Name, "validationkey") {
+					result.ValidationKey = cookie.Value
+				} else if result.JSessionID == "" && strings.EqualFold(cookie.Name, "JSESSIONID") {
+					result.JSessionID = cookie.Value
+				}
+			}
 		}
 	}
 
 	// 3. Parsear JSON body
 	var bodyMap map[string]interface{}
 	if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+		if errVal, ok := bodyMap["error"]; ok && errVal != nil {
+			result.Error = fmt.Errorf("SAPI login error: %v", errVal)
+		}
+
 		findKey := func(keys ...string) string {
 			for _, k := range keys {
 				if v, ok := bodyMap[k]; ok && v != nil {
@@ -676,9 +717,20 @@ func sapiLoginOAuthRequest(client *http.Client, sapiBaseURL, authorization, user
 			result.JSessionID = findKey("jsessionid", "jsessionId", "JSessionID", "sessionId", "sessionid")
 		}
 
-		if rt := findKey("responsetime", "responseTime", "lastrefreshdate", "lastRefreshDate"); rt != "" {
+		if rt := findKey("responsetime", "responseTime"); rt != "" {
+			var respTime int64
+			fmt.Sscanf(rt, "%d", &respTime)
+			if respTime > 0 {
+				if respTime < 100000000000 {
+					respTime = respTime * 1000
+				}
+				result.ResponseTime = respTime
+			}
+		}
+
+		if lrdStr := findKey("lastrefreshdate", "lastRefreshDate"); lrdStr != "" {
 			var lrd int64
-			fmt.Sscanf(rt, "%d", &lrd)
+			fmt.Sscanf(lrdStr, "%d", &lrd)
 			if lrd > 0 {
 				if lrd < 100000000000 {
 					lrd = lrd * 1000
