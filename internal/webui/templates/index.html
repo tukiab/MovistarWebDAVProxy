@@ -227,9 +227,17 @@
                 <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
                 <span class="ml-2 text-xs font-mono text-slate-400">console ~ webdav_proxy_go</span>
             </div>
-            <button onclick="copyLogs()" class="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 rounded transition flex items-center space-x-1">
-                <span id="copyBtnText">📋 Copiar Logs</span>
-            </button>
+            <div class="flex items-center space-x-2">
+                <button onclick="toggleAutoScroll()" class="px-2.5 py-1 text-xs font-medium text-emerald-300 hover:text-white bg-slate-700 hover:bg-slate-600 rounded transition flex items-center space-x-1">
+                    <span id="scrollBtnText">⏬ Auto-scroll: ON</span>
+                </button>
+                <button onclick="copyLogs()" class="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 rounded transition flex items-center space-x-1">
+                    <span id="copyBtnText">📋 Copiar Logs</span>
+                </button>
+                <button onclick="clearLogs()" class="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 rounded transition flex items-center space-x-1">
+                    <span>🧹 Limpiar</span>
+                </button>
+            </div>           
         </div>
         <div id="terminal" class="terminal-box p-4 h-80 overflow-y-auto bg-[#0A0F1C] text-slate-300 text-sm log-line">
             Iniciando proxy en Go...
@@ -362,6 +370,9 @@
         let currentAuthURL = "";
         let currentProvider = localStorage.getItem('mc_provider') || 'movistar';
         let logInterval = null;
+        let statusInterval = null;
+        let transfersInterval = null;
+        let autoScroll = true;
 
         function setProvider(prov) {
             currentProvider = prov;
@@ -419,12 +430,12 @@
             phoneInput.addEventListener('change', checkCredentials);
             checkCredentials();
             checkStatus();
-            setInterval(checkStatus, 5000);
+            statusInterval = setInterval(checkStatus, 5000);
             fetchLogs();
             logInterval = setInterval(fetchLogs, 2000);
             initWebMode();
             refreshTransfers();
-            setInterval(refreshTransfers, 3000);
+            transfersInterval = setInterval(refreshTransfers, 3000);
         });
 
         // ---- Tema claro / oscuro ----
@@ -1012,6 +1023,90 @@
             if (btn) btn.disabled = true;
             window.location.href = '/logout';
         }
+
+        async function clearLogs() {
+            const terminal = document.getElementById('terminal');
+            if (terminal) {
+                terminal.replaceChildren();
+            }
+
+            try {
+                const res = await fetch('/clear_logs', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: '{}'
+                });
+                if (!res.ok) {
+                    console.error('El servidor rechazó limpiar los logs:', res.status);
+                }
+            } catch (err) {
+                console.error('Error limpiando logs en el servidor:', err);
+            }
+
+            // fetchLogs(); ??
+        }
+
+        function startPolling() {
+            if (!statusInterval) {
+                checkStatus();
+                statusInterval = setInterval(checkStatus, 5000);
+            }
+            if (!logInterval) {
+                fetchLogs();
+                logInterval = setInterval(fetchLogs, 2000);
+            }
+            if (!transfersInterval) {
+                refreshTransfers();
+                transfersInterval = setInterval(refreshTransfers, 3000);
+            }
+        }
+        
+        function stopPolling() {
+            if (statusInterval) {
+                clearInterval(statusInterval);
+                statusInterval = null;
+            }
+            if (logInterval) {
+                clearInterval(logInterval);
+                logInterval = null;
+            }
+            if (transfersInterval) {
+                clearInterval(transfersInterval);
+                transfersInterval = null;
+            }
+        }
+
+        
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            updateScrollButton();
+
+            // Si el usuario lo reactiva, bajar inmediatamente al final
+            if (autoScroll) {
+                startPolling();
+                const terminal = document.getElementById('terminal');
+                if (terminal) terminal.scrollTop = terminal.scrollHeight;
+            } else {
+                stopPolling();
+            }
+        }
+
+        
+        function updateScrollButton() {
+            const btnText = document.getElementById('scrollBtnText');
+            const btn = btnText?.parentElement;
+            if (!btnText || !btn) return;
+
+            if (autoScroll) {
+                btnText.textContent = '⏬ Auto-scroll: ON';
+                btn.classList.remove('text-amber-300');
+                btn.classList.add('text-emerald-300');
+            } else {
+                btnText.textContent = '⏸️ Auto-scroll: OFF';
+                btn.classList.remove('text-emerald-300');
+                btn.classList.add('text-amber-300');
+            }
+        }        
     </script>
 </body>
 </html>
