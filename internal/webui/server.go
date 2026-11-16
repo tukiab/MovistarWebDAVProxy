@@ -147,6 +147,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/start", s.handleStart)
 	mux.HandleFunc("/stop", s.handleStop)
 	mux.HandleFunc("/logs", s.handleLogs)
+	mux.HandleFunc("/clear_logs", s.handleClearLogs)
 	mux.HandleFunc("/start_login", s.handleStartLogin)
 	mux.HandleFunc("/complete_login", s.handleCompleteLogin)
 	mux.HandleFunc("/unlink", s.handleUnlink)
@@ -833,6 +834,16 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		"is_running": s.IsRunning(),
 	})
 }
+
+func (s *Server) handleClearLogs(w http.ResponseWriter, r *http.Request) {
+	if !requirePost(w, r) {
+		return
+	}
+	logger.ClearLogs()
+	logger.Log("[WebUI] 🧹 Logs limpiados por el usuario.")
+	jsonResponse(w, http.StatusOK, map[string]interface{}{"status": "ok"})
+}
+
 
 func (s *Server) cleanupExpiredLoginsLocked(now time.Time) {
 	for k, v := range s.loginState {
