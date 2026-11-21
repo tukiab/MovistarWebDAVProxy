@@ -10,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"movistar-webdav-proxy/internal/cache"
 	"movistar-webdav-proxy/internal/config"
@@ -24,11 +26,15 @@ var lastUploadDataID string
 
 func setupTestWebDAVServerWithDB(t *testing.T) (*Server, *cache.MetadataStore, string, func()) {
 	t.Helper()
+	// Estas pruebas son de la emulación de vacíos (SQLite + manifiesto); los vacíos
+	// reales en la nube se prueban en empty_files_real_test.go.
+	t.Setenv("WEBDAV_REAL_EMPTY_FILES", "false")
 
+	var ms *cache.MetadataStore // la «nube» del simulador lista lo que hay en la base
 	var uploadsCount atomic.Int32
 	var manifestData []byte
 
-	mockSAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockSAPI := newShimServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		p := r.URL.Path
 		action := r.URL.Query().Get("action")
@@ -120,6 +126,14 @@ func setupTestWebDAVServerWithDB(t *testing.T) (*Server, *cache.MetadataStore, s
 			b, _ := io.ReadAll(r.Body)
 			_ = json.Unmarshal(b, &q)
 			media := make([]map[string]interface{}, 0)
+			if fid := r.URL.Query().Get("folderid"); fid != "" && ms != nil {
+				var folderID int64
+				_, _ = fmt.Sscan(fid, &folderID)
+				items, _ := ms.ListMediaInFolder(folderID)
+				for _, it := range items {
+					media = append(media, map[string]interface{}{"id": it.ID, "name": it.Name, "size": it.Size, "folderid": it.FolderID})
+				}
+			}
 			for _, id := range q.Data.IDs {
 				media = append(media, map[string]interface{}{
 					"id": id, "name": "file.txt", "size": 10, "folderid": 100,
@@ -164,7 +178,7 @@ func setupTestWebDAVServerWithDB(t *testing.T) (*Server, *cache.MetadataStore, s
 		t.Fatalf("MkdirTemp failed: %v", err)
 	}
 	dbPath := filepath.Join(tmpDir, "test_metadata.db")
-	ms, err := cache.NewMetadataStore(dbPath)
+	ms, err = cache.NewMetadataStore(dbPath)
 	if err != nil {
 		mockSAPI.Close()
 		_ = os.RemoveAll(tmpDir)
@@ -487,5 +501,347 @@ func TestEphemeralEmptyFiles_FilteredAndPurged(t *testing.T) {
 	}
 	if len(remaining) != 3 {
 		t.Fatalf("expected 3 persistent @writer files after purge, got %d: %+v", len(remaining), remaining)
+	}
+}
+
+func TestVirtualEmptyFiles_BootstrapAfterDelayedSync(t *testing.T) {
+	manifestJSON := `{"version":1,"files":[{"path":"/Backups/Control/@writer/v1.cformat","mod_time":"20261116T200000Z"}]}`
+
+	var mockSAPI *httptest.Server
+	mockSAPI = newShimServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/media/folder/root"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"folders":[{"id":100,"name":"/","magic":true}]}}`))
+		case strings.Contains(r.URL.Path, "/download/manifest"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(manifestJSON))
+		case strings.Contains(r.URL.Path, "/media"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"media":[{"id":"manifest-1","name":"empty-files.json","url":"` + mockSAPI.URL + `/download/manifest"}]}}`))
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		}
+	}))
+	defer mockSAPI.Close()
+
+	client, err := sapi.NewClient(config.AccountConfig{
+		Provider:      "movistar",
+		AccessToken:   "test-access",
+		RefreshToken:  "test-refresh",
+		ValidationKey: "test-vk",
+	})
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+	client.SetBaseURLs(mockSAPI.URL+"/sapi", mockSAPI.URL)
+
+	tmpDir := t.TempDir()
+	ms, err := cache.NewMetadataStore(filepath.Join(tmpDir, "delayed_sync.db"))
+	if err != nil {
+		t.Fatalf("NewMetadataStore failed: %v", err)
+	}
+	defer ms.Close()
+
+	srv := NewServerWithAuth(client, config.AuthConfig{AuthDisabled: true})
+	// Simula revinculación: SetMetadataStore se llama cuando SQLite aún está vacía.
+	srv.SetMetadataStore(ms)
+	srv.FS().BootstrapEmptyFiles()
+
+	// Simula finalización tardía de SyncChanges (>2s): inserta raíz, .movistar-webdav-proxy y el manifiesto.
+	_ = ms.SetInitialSync("cursor-1")
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 100, Name: "/", Magic: true})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 150, Name: ProxyInternalDir, ParentID: 100})
+	_ = ms.UpsertMedia(sapi.MediaItem{ID: "manifest-1", Name: ManifestFileName, FolderID: 150, Size: int64(len(manifestJSON)), URL: mockSAPI.URL + "/download/manifest"})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 200, Name: "Backups", ParentID: 100})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 300, Name: "Control", ParentID: 200})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 302, Name: "@writer", ParentID: 300})
+
+	// Al completar SyncChanges se invoca BootstrapEmptyFiles()
+	srv.FS().BootstrapEmptyFiles()
+
+	vf, err := ms.GetVirtualEmptyFile(302, "v1.cformat")
+	if err != nil || vf == nil {
+		t.Fatalf("expected v1.cformat loaded after delayed sync, got vf=%v err=%v", vf, err)
+	}
+}
+
+func TestAutoHealHyperBackupWriter_WithoutSeqMapping(t *testing.T) {
+	client, err := sapi.NewClient(config.AccountConfig{
+		Provider:      "movistar",
+		AccessToken:   "test-access",
+		RefreshToken:  "test-refresh",
+		ValidationKey: "test-vk",
+	})
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	ms, err := cache.NewMetadataStore(filepath.Join(tmpDir, "autoheal.db"))
+	if err != nil {
+		t.Fatalf("NewMetadataStore failed: %v", err)
+	}
+	defer ms.Close()
+
+	_ = ms.SetInitialSync("cursor-1")
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 100, Name: "/", Magic: true})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 200, Name: "task.hbk", ParentID: 100})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 300, Name: "Control", ParentID: 200})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 302, Name: "@writer", ParentID: 300})
+
+	srv := NewServerWithAuth(client, config.AuthConfig{AuthDisabled: true})
+	srv.SetMetadataStore(ms)
+
+	healed := srv.FS().autoHealHyperBackupWriter("/task.hbk/Control/@writer", 302, nil, nil)
+	if len(healed) != 2 {
+		t.Fatalf("expected 2 healed virtual files without seq_mapping, got %d (%+v)", len(healed), healed)
+	}
+
+	names := map[string]bool{}
+	for _, vf := range healed {
+		names[vf.Name] = true
+	}
+	if !names["v1.cformat"] {
+		t.Fatalf("expected v1.cformat in healed files, got %+v", healed)
+	}
+	if !names["v1.1.-1.0.0.none.none.cinfo"] {
+		t.Fatalf("expected v1.1.-1.0.0.none.none.cinfo in healed files, got %+v", healed)
+	}
+}
+
+// Si hay cambios locales sin subir (marca persistente en SQLite), al arrancar no se
+// carga el manifiesto de la nube, más antiguo: resucitaría .cinfo viejos de Hyper
+// Backup sobre los nuevos (cloud-seq-id [1] frente a local-seq-id [24]).
+func TestEmptyFiles_BootstrapKeepsUnsyncedLocalState(t *testing.T) {
+	manifestJSON := `{"version":1,"files":[{"path":"/Backups/Control/@writer/v1.1.-1.0.0.none.none.cinfo","mod_time":"20261116T200000Z"}]}`
+	var mockSAPI *httptest.Server
+	mockSAPI = newShimServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(r.URL.Path, "/download/manifest"):
+			_, _ = w.Write([]byte(manifestJSON))
+		default:
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		}
+	}))
+	defer mockSAPI.Close()
+	client, err := sapi.NewClient(config.AccountConfig{Provider: "movistar", AccessToken: "a", RefreshToken: "r", ValidationKey: "vk"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.SetBaseURLs(mockSAPI.URL+"/sapi", mockSAPI.URL)
+	ms, err := cache.NewMetadataStore(filepath.Join(t.TempDir(), "dirty.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ms.Close()
+	_ = ms.SetInitialSync("cursor-1")
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 100, Name: "/", Magic: true})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 150, Name: ProxyInternalDir, ParentID: 100})
+	_ = ms.UpsertMedia(sapi.MediaItem{ID: "manifest-1", Name: ManifestFileName, FolderID: 150, Size: int64(len(manifestJSON)), URL: mockSAPI.URL + "/download/manifest"})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 200, Name: "Backups", ParentID: 100})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 300, Name: "Control", ParentID: 200})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 302, Name: "@writer", ParentID: 300})
+	_ = ms.UpsertVirtualEmptyFile(302, "v1.24.-1.0.0.none.none.cinfo", "20261118T090000Z")
+	_ = ms.SetSyncState(emptyFilesCloudKey, "manifest-1:antiguo") // esta base ya conocía el manifiesto…
+	_ = ms.SetSyncState(emptyFilesDirtyKey, "1")                  // …pero el del .cinfo 24 nunca llegó a subirse
+
+	srv := NewServerWithAuth(client, config.AuthConfig{AuthDisabled: true})
+	srv.SetMetadataStore(ms)
+	srv.FS().BootstrapEmptyFiles()
+
+	if vf, _ := ms.GetVirtualEmptyFile(302, "v1.1.-1.0.0.none.none.cinfo"); vf != nil {
+		t.Fatal("se resucitó el .cinfo viejo del manifiesto sobre el estado local más nuevo")
+	}
+	if vf, _ := ms.GetVirtualEmptyFile(302, "v1.24.-1.0.0.none.none.cinfo"); vf == nil {
+		t.Fatal("se perdió el .cinfo local")
+	}
+}
+
+// El manifiesto solo se sube si cambia (la app no sube lo que no ha cambiado): cada
+// subida, renombrado o borrado programa un guardado, pero si los archivos vacíos
+// emulados siguen igual, el que hay en la nube vale. Al cambiar, se sube.
+func TestEmptyFiles_ManifestNotReuploadedWhenUnchanged(t *testing.T) {
+	var uploads atomic.Int32
+	mockSAPI := newShimServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/sapi/upload") {
+			uploads.Add(1)
+			_, _ = w.Write([]byte(`{"success":"ok","id":"manifest-1","status":"U","data":{"id":"manifest-1"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{}}`))
+	}))
+	defer mockSAPI.Close()
+	client, err := sapi.NewClient(config.AccountConfig{Provider: "movistar", AccessToken: "a", RefreshToken: "r", ValidationKey: "vk"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.SetBaseURLs(mockSAPI.URL+"/sapi", mockSAPI.URL)
+	ms, err := cache.NewMetadataStore(filepath.Join(t.TempDir(), "m.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ms.Close()
+	_ = ms.SetInitialSync("cursor-1")
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 100, Name: "/", Magic: true})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 150, Name: ProxyInternalDir, ParentID: 100})
+	_ = ms.UpsertMedia(sapi.MediaItem{ID: "manifest-1", Name: ManifestFileName, FolderID: 150})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 302, Name: "@writer", ParentID: 100})
+	_ = ms.UpsertVirtualEmptyFile(302, "v1.1.-1.0.0.none.none.cinfo", "20261118T090000Z")
+	_ = ms.SetSyncState(emptyFilesCloudKey, "manifest-1:anterior") // base que ya conocía el manifiesto
+
+	srv := NewServerWithAuth(client, config.AuthConfig{AuthDisabled: true})
+	srv.SetMetadataStore(ms)
+	efm := srv.FS().emptyFileManager
+
+	efm.SaveManifest()
+	first := uploads.Load()
+	if first == 0 {
+		t.Fatal("el primer guardado debía subir el manifiesto")
+	}
+	efm.SaveManifest()
+	efm.SaveManifest()
+	if n := uploads.Load(); n != first {
+		t.Fatalf("manifiesto sin cambios resubido: %d peticiones de subida (antes %d)", n, first)
+	}
+	if d, _ := ms.GetSyncState(emptyFilesDirtyKey); d == "1" {
+		t.Error("sin cambios pendientes, la marca de sucio debía quedar limpia")
+	}
+	_ = ms.UpsertVirtualEmptyFile(302, "v1.2.-1.0.0.none.none.cinfo", "20261118T100000Z")
+	efm.SaveManifest()
+	if n := uploads.Load(); n == first {
+		t.Fatal("el manifiesto cambió y no se subió")
+	}
+}
+
+// La relectura tras subir (como la app) deja la URL firmada en la base de metadatos
+// y en la caché de subidas recientes, para que la primera descarga la use.
+func TestMediaRefresh_StoresSignedURL(t *testing.T) {
+	srv, ms, _, cleanup := setupTestWebDAVServerWithDB(t)
+	defer cleanup()
+	fs := srv.FS()
+	_ = ms.UpsertMedia(sapi.MediaItem{ID: "777", Name: "a.bin", FolderID: 200, Size: 3, ETag: "e1"})
+	fs.cacheMu.Lock()
+	fs.uploadCache[cacheKey("/Backups/a.bin")] = &MemoryFile{ID: "777", Name: "a.bin", FolderID: 200, Size: 3}
+	fs.cacheMu.Unlock()
+
+	fs.applyMediaRefresh(sapi.MediaRefresh{ID: "777", URL: "https://cloud/firmada", ETag: "e2", UploadETag: "e1"})
+
+	if m, _ := ms.GetMediaByID("777"); m == nil || m.URL != "https://cloud/firmada" || m.ETag != "e2" {
+		t.Fatalf("base de metadatos = %+v", m)
+	}
+	fs.cacheMu.RLock()
+	mem := fs.uploadCache[cacheKey("/Backups/a.bin")]
+	fs.cacheMu.RUnlock()
+	if mem.URL != "https://cloud/firmada" || !mem.URLConfirmed {
+		t.Fatalf("caché de subidas = %+v", mem)
+	}
+
+	// una relectura de una subida anterior no pisa un archivo que ya cambió
+	_ = ms.UpsertMedia(sapi.MediaItem{ID: "777", Name: "a.bin", FolderID: 200, Size: 5, ETag: "e3", URL: "https://cloud/nueva"})
+	fs.applyMediaRefresh(sapi.MediaRefresh{ID: "777", URL: "https://cloud/vieja", UploadETag: "e1"})
+	if m, _ := ms.GetMediaByID("777"); m == nil || m.URL != "https://cloud/nueva" {
+		t.Fatalf("se pisó un archivo que había cambiado: %+v", m)
+	}
+	fs.cacheMu.RLock()
+	mem = fs.uploadCache[cacheKey("/Backups/a.bin")]
+	fs.cacheMu.RUnlock()
+	if mem.URL == "https://cloud/vieja" {
+		t.Fatal("la caché de subidas tomó la URL de una relectura antigua")
+	}
+}
+
+// Contenedor nuevo o base local borrada: la base no ha cargado nunca el manifiesto de
+// la nube. Aunque un cliente suba algo nada más arrancar (y eso marque cambios
+// pendientes), no se puede subir el estado local, casi vacío, sobre el manifiesto: se
+// perderían los .cinfo de Hyper Backup («cloud-seq-id [1]» y ST_CLOUD_NOT_SYNC_OLDER,
+// issue #60). Primero se carga y combina el de la nube.
+func TestEmptyFiles_FreshDatabaseLoadsCloudManifestEvenIfDirty(t *testing.T) {
+	prev := manifestDebounceDur
+	manifestDebounceDur = time.Hour // los guardados se lanzan a mano en el test
+	t.Cleanup(func() { manifestDebounceDur = prev })
+
+	manifestJSON := `{"version":1,"files":[` +
+		`{"path":"/Backups/Control/@writer/v1.cformat","mod_time":"20261119T200000Z"},` +
+		`{"path":"/Backups/Control/@writer/v1.6.-1.0.0.none.none.cinfo","mod_time":"20261119T200000Z"}]}`
+	var uploads atomic.Int32
+	var mu sync.Mutex
+	var lastBody string
+	var mockSAPI *httptest.Server
+	mockSAPI = newShimServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(r.URL.Path, "/download/manifest"):
+			_, _ = w.Write([]byte(manifestJSON))
+		case strings.HasPrefix(r.URL.Path, "/sapi/upload"):
+			b, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			lastBody = string(b)
+			mu.Unlock()
+			uploads.Add(1)
+			_, _ = w.Write([]byte(`{"success":"ok","id":"manifest-1","status":"U","data":{"id":"manifest-1"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		}
+	}))
+	defer mockSAPI.Close()
+	client, err := sapi.NewClient(config.AccountConfig{Provider: "movistar", AccessToken: "a", RefreshToken: "r", ValidationKey: "vk"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.SetBaseURLs(mockSAPI.URL+"/sapi", mockSAPI.URL)
+	ms, err := cache.NewMetadataStore(filepath.Join(t.TempDir(), "nueva.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ms.Close()
+
+	srv := NewServerWithAuth(client, config.AuthConfig{AuthDisabled: true})
+	srv.SetMetadataStore(ms)
+	efm := srv.FS().emptyFileManager
+
+	// Base recién creada y aún sin metadatos: un cliente sube algo vacío y se programa
+	// un guardado. No debe subir nada todavía.
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 200, Name: "Backups", ParentID: 100})
+	_ = ms.UpsertVirtualEmptyFile(200, "nuevo-vacio", "20261119T210000Z")
+	efm.ScheduleSave()
+	efm.SaveManifest()
+	if n := uploads.Load(); n != 0 {
+		t.Fatalf("una base que no ha cargado el manifiesto lo ha subido (%d subidas)", n)
+	}
+
+	// Termina la sincronización de metadatos y se carga el manifiesto de la nube.
+	_ = ms.SetInitialSync("cursor-1")
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 100, Name: "/", Magic: true})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 150, Name: ProxyInternalDir, ParentID: 100})
+	_ = ms.UpsertMedia(sapi.MediaItem{ID: "manifest-1", Name: ManifestFileName, FolderID: 150, Size: int64(len(manifestJSON)), URL: mockSAPI.URL + "/download/manifest"})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 300, Name: "Control", ParentID: 200})
+	_ = ms.UpsertFolder(sapi.FolderItem{ID: 302, Name: "@writer", ParentID: 300})
+	srv.FS().BootstrapEmptyFiles()
+
+	for _, name := range []string{"v1.cformat", "v1.6.-1.0.0.none.none.cinfo"} {
+		if vf, _ := ms.GetVirtualEmptyFile(302, name); vf == nil {
+			t.Fatalf("no se cargó %s del manifiesto de la nube", name)
+		}
+	}
+	if vf, _ := ms.GetVirtualEmptyFile(200, "nuevo-vacio"); vf == nil {
+		t.Fatal("se perdió el cambio local hecho antes de cargar el manifiesto")
+	}
+
+	// Ahora sí se sube, y con todo combinado.
+	efm.SaveManifest()
+	if uploads.Load() == 0 {
+		t.Fatal("tras cargar el manifiesto, los cambios locales debían subirse")
+	}
+	mu.Lock()
+	body := lastBody
+	mu.Unlock()
+	for _, want := range []string{"v1.6.-1.0.0.none.none.cinfo", "v1.cformat", "nuevo-vacio"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("el manifiesto subido no lleva %s", want)
+		}
 	}
 }

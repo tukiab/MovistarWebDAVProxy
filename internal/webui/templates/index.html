@@ -106,6 +106,26 @@
         </div>
     </header>
 
+    <!-- Aviso de nueva versión disponible -->
+    <div id="update-banner" class="hidden mb-6 bg-amber-50 border border-amber-300 text-amber-800 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center space-x-3 text-xs sm:text-sm">
+            <span class="text-lg">🆕</span>
+            <div>
+                <span class="font-bold">Nueva versión disponible:</span>
+                <span id="update-banner-version" class="font-mono font-semibold px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded border border-amber-300 ml-1"></span>
+                <span class="text-amber-800 opacity-80 ml-1">(actual: {{.Version}})</span>
+            </div>
+        </div>
+        <div class="flex items-center space-x-2 self-end sm:self-auto">
+            <a id="update-banner-link" href="https://github.com/uniextra/MovistarWebDAVProxy/releases" target="_blank" rel="noopener" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl text-xs transition shadow-sm">
+                Ver Release en GitHub ↗
+            </a>
+            <button type="button" onclick="dismissUpdateBanner()" class="p-1.5 text-amber-800 hover:opacity-75 rounded-lg transition" title="Cerrar aviso" aria-label="Cerrar aviso">
+                ✕
+            </button>
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <!-- Sesión web (modo web): sustituye a la tarjeta de dispositivo OAuth -->
         <div id="web-session-card" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
@@ -256,13 +276,10 @@
             </div>
             
             <div class="p-6 space-y-5 text-sm">
-                <!-- Selector dentro de modal -->
+                <!-- Proveedor: el elegido en la tarjeta «Dispositivo & Cuenta» (no se elige otra vez aquí) -->
                 <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
-                    <span class="text-slate-700 font-semibold">Proveedor seleccionado:</span>
-                    <div class="flex space-x-2">
-                        <button type="button" onclick="setProvider('movistar'); refreshOAuthLink();" id="modal-prov-movistar" class="px-3 py-1 rounded-lg font-semibold border border-blue-500 bg-blue-50 text-blue-700 transition">Movistar</button>
-                        <button type="button" onclick="setProvider('o2'); refreshOAuthLink();" id="modal-prov-o2" class="px-3 py-1 rounded-lg font-semibold border border-slate-200 bg-white text-slate-600 transition">O2 Cloud</button>
-                    </div>
+                    <span class="text-slate-700 font-semibold">Proveedor:</span>
+                    <span id="modal-prov-name" class="px-3 py-1 rounded-lg font-semibold border border-blue-500 bg-blue-50 text-blue-700">Movistar Cloud</span>
                 </div>
 
                 <!-- Paso 1 -->
@@ -388,8 +405,7 @@
             const step2Desc = document.getElementById('step2-desc');
             const btnM = document.getElementById('prov-btn-movistar');
             const btnO = document.getElementById('prov-btn-o2');
-            const mBtnM = document.getElementById('modal-prov-movistar');
-            const mBtnO = document.getElementById('modal-prov-o2');
+            const mName = document.getElementById('modal-prov-name');
 
             if (currentProvider === 'o2') {
                 if (badge) {
@@ -404,8 +420,10 @@
                 }
                 if (btnO) btnO.className = 'py-2 px-3 rounded-xl border border-sky-500 bg-sky-50 text-sky-700 font-semibold text-xs flex items-center justify-center space-x-1.5 transition shadow-sm';
                 if (btnM) btnM.className = 'py-2 px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 font-semibold text-xs flex items-center justify-center space-x-1.5 transition hover:bg-slate-100';
-                if (mBtnO) mBtnO.className = 'px-3 py-1 rounded-lg font-semibold border border-sky-500 bg-sky-50 text-sky-700 transition';
-                if (mBtnM) mBtnM.className = 'px-3 py-1 rounded-lg font-semibold border border-slate-200 bg-white text-slate-600 transition';
+                if (mName) {
+                    mName.textContent = 'O2 Cloud';
+                    mName.className = 'px-3 py-1 rounded-lg font-semibold border border-sky-500 bg-sky-50 text-sky-700';
+                }
             } else {
                 if (badge) {
                     badge.textContent = 'Movistar';
@@ -419,8 +437,10 @@
                 }
                 if (btnM) btnM.className = 'py-2 px-3 rounded-xl border border-blue-500 bg-blue-50 text-blue-700 font-semibold text-xs flex items-center justify-center space-x-1.5 transition shadow-sm';
                 if (btnO) btnO.className = 'py-2 px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 font-semibold text-xs flex items-center justify-center space-x-1.5 transition hover:bg-slate-100';
-                if (mBtnM) mBtnM.className = 'px-3 py-1 rounded-lg font-semibold border border-blue-500 bg-blue-50 text-blue-700 transition';
-                if (mBtnO) mBtnO.className = 'px-3 py-1 rounded-lg font-semibold border border-slate-200 bg-white text-slate-600 transition';
+                if (mName) {
+                    mName.textContent = 'Movistar Cloud';
+                    mName.className = 'px-3 py-1 rounded-lg font-semibold border border-blue-500 bg-blue-50 text-blue-700';
+                }
             }
         }
 
@@ -646,6 +666,7 @@
                     return;
                 }
                 const data = await res.json();
+                handleUpdateNotification(data);
                 const logoutBtn = document.getElementById('logout-btn');
                 if (logoutBtn && typeof data.auth_enabled === 'boolean') {
                     if (data.auth_enabled) {
@@ -756,23 +777,6 @@
         async function stopProxy() {
             await fetch('/stop', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
             checkStatus();
-        }
-
-        async function refreshOAuthLink() {
-            const phone = phoneInput.value.trim();
-            if (!phone) return;
-            try {
-                const res = await fetch('/start_login', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({phone, provider: currentProvider})
-                });
-                const data = await res.json();
-                if (data.status === 'ok' && data.auth_url) {
-                    currentAuthURL = data.auth_url;
-                    oauthLinkBtn.href = data.auth_url;
-                }
-            } catch (err) {}
         }
 
         async function openOAuthModal() {
@@ -1015,6 +1019,45 @@
                     .catch(() => fallbackCopy(text));
             } else {
                 fallbackCopy(text);
+            }
+        }
+
+        let currentLatestRelease = '';
+        function dismissUpdateBanner() {
+            const banner = document.getElementById('update-banner');
+            if (banner) banner.classList.add('hidden');
+            if (currentLatestRelease) {
+                try { sessionStorage.setItem('mc_update_dismissed_' + currentLatestRelease, '1'); } catch (e) {}
+            }
+        }
+
+        function handleUpdateNotification(data) {
+            const banner = document.getElementById('update-banner');
+            if (!banner) return;
+            if (!data || !data.update_available || !data.latest_version) {
+                banner.classList.add('hidden');
+                return;
+            }
+            currentLatestRelease = data.latest_version;
+            const verEl = document.getElementById('update-banner-version');
+            if (verEl) verEl.textContent = data.latest_version;
+            const linkEl = document.getElementById('update-banner-link');
+            if (linkEl && data.release_url) linkEl.href = data.release_url;
+
+            let dismissed = false;
+            let notifiedInSession = false;
+            try {
+                dismissed = sessionStorage.getItem('mc_update_dismissed_' + data.latest_version) === '1';
+                notifiedInSession = sessionStorage.getItem('mc_update_notified_' + data.latest_version) === '1';
+            } catch (e) {}
+
+            if (!dismissed) {
+                banner.classList.remove('hidden');
+            }
+
+            if (!notifiedInSession && data.notify_update_session !== false) {
+                try { sessionStorage.setItem('mc_update_notified_' + data.latest_version, '1'); } catch (e) {}
+                showToast(`🆕 Nueva versión ${data.latest_version} disponible en GitHub.`, 'warning', 8000);
             }
         }
 

@@ -2,6 +2,37 @@
 
 Todos los cambios notables en **Movistar / O2 Cloud WebDAV Proxy** se documentan en este archivo.
 
+## [v2.6.8] - 2026-11-16
+
+### 🛠️ Resiliencia en Subidas Largas de Hyper Backup (`HTTP 401` tras 1h)
+- **Reintento automático ante `HTTP 401` en `UploadFileToFolder` (`internal/sapi/client.go`):**
+  - Cuando una subida en streaming recibe `401`, rebobina el `io.ReadSeeker` y reintenta con la sesión renovada (escalando al Paso 2 `refreshSessionWithMode(true)` si el Paso 1 no fue suficiente), evitando abortar copias largas de Synology Hyper Backup.
+  - En `doRequestLocked`, evita lanzar una renovación redundante cuando `processSAPIResponse` ya rotó credenciales por cabecera.
+- **Ventana deslizante de `LastRefreshDate` y Paso 1 en `RefreshSession` (`internal/sapi/client.go`, `internal/auth/oauth.go`):**
+  - `processSAPIResponse` actualiza `LastRefreshDate` durante peticiones `2xx` activas cada > 25 min para no exceder la ventana de 3600 s (`expiresin`) en SAPI, e impide que cookies del host `upload.*` sobrescriban una `JSESSIONID` activa de SAPI.
+  - `RefreshSession` usa un `LastRefreshDate` fresco en el Paso 1 cuando el anterior supera 45 min, acepta la sesión renovada, rellena `LastRefreshDate` desde `ResponseTime` y registra en los logs por qué el Paso 1 escala al Paso 2.
+- **`RefreshOAuthToken` conforme a RFC 6749 §2.3.1 (`internal/auth/oauth.go`):**
+  - Envía primero `Authorization: Basic` sin duplicar credenciales en el cuerpo (con fallback automático incluyéndolas si falla) e incluye el resumen sanitizado del error real devuelto por `apiseg.telefonica.es`.
+- **Logs limpios ante respuestas HTML (`internal/sapi/client.go`, `internal/sapi/changes.go`):**
+  - Nuevo helper `summarizeHTTPErrorBody` en `UploadFileToFolder`, `GetMediaByIDs` y `GetFoldersByIDs` para resumir páginas HTML SPA de 95 KB (p. ej. `HTML error page (title="Movistar Cloud", ... bytes)`) en lugar de volcar el HTML completo al log.
+
+## [v2.6.7] - 2026-11-16
+
+### 🎨 Modo oscuro en pantalla de login (PR `#51`)
+- Añadido script de gestión automática/manual de tema oscuro en `internal/webui/templates/login.html`.
+
+## [v2.5.6] - 2026-11-16
+
+### 🔔 Notificaciones Globales de Telegram y Diagnóstico de User-Agent (PR `#53`)
+- **Notificador global de Telegram (`internal/notifier/telegram.go`, `cmd/server/main.go`, `internal/webui/server.go`):**
+  - Instancia global `notifier.Default` inicializada automáticamente desde `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` al arrancar, sin esperar a abrir el panel web.
+  - Prioridad para las credenciales guardadas en `/app/tokens` al cargar la cuenta, con fallback automático a las variables de entorno de Docker si se limpia o desvincula la cuenta.
+  - Nuevas funciones `Send` y `Alert` / `SendAlert` con control antispam de 1 hora independiente por clave (`lastAlerts`) y notificaciones automáticas de arranque (`WebDAV Proxy iniciado`), cuenta sin vincular / sesión web no iniciada y fallos críticos (SAPI / Chromium).
+- **Logs de `User-Agent` al inicio (`internal/auth/oauth.go`, `cmd/server/main.go`):**
+  - Añadidas `GetSAPIUserAgentInfo` y `GetDesktopUserAgentInfo` para registrar en el arranque (en modo estándar) si `SAPI_USER_AGENT` y `DESKTOP_USER_AGENT` usan su valor por defecto o uno personalizado, facilitando el diagnóstico ante errores `401`/`403`.
+- **Documentación y Compose (`README.md`, `docs/configuration.md`, `docs/backup-clients.md`, `docs/network-drive.md`, `docker-compose.yml`, `docker-compose.web.yml`):**
+  - Reestructurado el `README.md` para facilitar la primera integración, actualizados los archivos YAML con `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` y `TOKENS_ENCRYPTION_KEY`, y separados los detalles técnicos avanzados en `docs/configuration.md` y `docs/backup-clients.md`.
+
 ## [v2.5.5] - 2026-11-16
 
 ### 🛡️ Bypass de CloudFront WAF (401 de 0 bytes) y Sesión SAPI (PR `#52`, `#49`)

@@ -142,7 +142,7 @@ func NewServerWithAuth(client *sapi.Client, authCfg config.AuthConfig, metaStore
 		FileSystem: fs,
 		LockSystem: lockSys,
 		Logger: func(r *http.Request, err error) {
-			if err != nil && !errors.Is(err, ErrUploadTooLarge) && !isExpectedNotFound(r.Method, err) {
+			if err != nil && !errors.Is(err, ErrUploadTooLarge) && !errors.Is(err, ErrUploadUnsupported) && !isExpectedNotFound(r.Method, err) {
 				logger.Log("[WebDAV] ❌ Error en %s %s: %v", r.Method, r.URL.Path, err)
 			}
 		},
@@ -181,7 +181,6 @@ func (s *Server) shouldOfferNTLM(r *http.Request) bool {
 	// "auto" (por defecto): solo a clientes Windows nativos o que ya envíen NTLM
 	return isWindowsClient(r) || config.IsNTLMHeader(r.Header.Get("Authorization"))
 }
-
 
 func (s *Server) InvalidateCache() {
 	if s.fs != nil {
@@ -521,6 +520,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// MOVE que solo cambia mayúsculas ("Informe.txt" -> "informe.txt").
+	if method == "MOVE" && s.tryCaseOnlyRename(lw, r) {
+		return
+	}
+
 	// 4. Prevenir doble descarga en GET y sniffing en HEAD pre-configurando Content-Type
 	if method == "GET" || method == "HEAD" {
 		ext := filepath.Ext(urlPath)
@@ -677,14 +681,53 @@ type putStatusInterceptor struct {
 	exceededFlag *atomic.Bool
 	guard        *uploadGuard
 	wroteHeader  bool
+	retryBody    bool // se respondió 503: el cuerpo es el motivo, no el texto del 405
+	ownBody      bool // se respondió 503 o 415: el cuerpo es el del proxy, no el del 405
 }
 
 func (p *putStatusInterceptor) WriteHeader(statusCode int) {
+	unsupportedMsg := ""
 	if ((p.exceededFlag != nil && p.exceededFlag.Load()) || (p.guard != nil && p.guard.tooLarge.Load())) && statusCode >= 400 {
 		statusCode = http.StatusRequestEntityTooLarge
+	} else if p.guard != nil && p.guard.unsupported.Load() && statusCode >= 400 {
+		// MED-1050: definitivo. Sin Retry-After; 415 no lo reintentan los clientes.
+		h := p.ResponseWriter.Header()
+		h.Del("Content-Length")
+		h.Set("Content-Type", "text/plain; charset=utf-8")
+		h.Set("X-Content-Type-Options", "nosniff")
+		statusCode = http.StatusUnsupportedMediaType
+		unsupportedMsg = "O2 Cloud no admite este archivo: su contenido no corresponde a la extensión (MED-1050). Reintentarlo no lo arreglará.\n"
+	} else if p.guard != nil && p.guard.retryLater.Load() && statusCode == http.StatusMethodNotAllowed {
+		h := p.ResponseWriter.Header()
+		h.Set("Retry-After", "30")
+		h.Del("Content-Length")
+		h.Set("Content-Type", "text/plain; charset=utf-8")
+		h.Set("X-Content-Type-Options", "nosniff")
+		statusCode = http.StatusServiceUnavailable
+		p.retryBody = true
 	}
 	p.wroteHeader = true
+	p.ownBody = p.retryBody || unsupportedMsg != ""
 	p.ResponseWriter.WriteHeader(statusCode)
+	if unsupportedMsg != "" {
+		_, _ = p.ResponseWriter.Write([]byte(unsupportedMsg))
+	}
+	if p.retryBody {
+		msg := "O2 Cloud no aceptó la subida; reinténtalo en 30 s"
+		if r, ok := p.guard.reason.Load().(string); ok && r != "" {
+			msg += ": " + r
+		}
+		_, _ = p.ResponseWriter.Write([]byte(msg + "\n"))
+	}
+}
+
+// Write descarta el cuerpo del 405 original («Method Not Allowed») cuando se ha
+// respondido 503: ya se escribió el motivo.
+func (p *putStatusInterceptor) Write(b []byte) (int, error) {
+	if p.ownBody {
+		return len(b), nil
+	}
+	return p.ResponseWriter.Write(b)
 }
 
 type responseInterceptor struct {
@@ -908,15 +951,21 @@ func (l *resilientLockSystem) Confirm(now time.Time, name0, name1 string, condit
 	return release, err
 }
 
-// isExpectedNotFound indica un "no existe" en una consulta: los clientes (rclone,
-// Duplicati...) comprueban si un archivo existe antes de subirlo, y que no exista es
-// lo normal, no un error. En DELETE o MOVE sí se registra.
+// isExpectedNotFound indica un "no existe" que es lo normal, no un error:
+//   - en una consulta: los clientes (rclone, Duplicati...) comprueban si un archivo
+//     existe antes de subirlo;
+//   - en un MKCOL, cuando falta la carpeta padre (409): rclone crea primero la carpeta
+//     más profunda y, si responde 409, crea la de arriba y repite;
+//   - en un DELETE: borrar algo que ya no está deja el mismo resultado, y es lo que
+//     hace rclone tras una subida rechazada (el proxy ya retiró lo creado).
+//
+// En MOVE sí se registra.
 func isExpectedNotFound(method string, err error) bool {
 	if !errors.Is(err, os.ErrNotExist) {
 		return false
 	}
 	switch method {
-	case "PROPFIND", "HEAD", "GET":
+	case "PROPFIND", "HEAD", "GET", "MKCOL", "DELETE":
 		return true
 	}
 	return false

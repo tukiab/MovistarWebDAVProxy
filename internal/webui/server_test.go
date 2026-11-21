@@ -2,6 +2,7 @@ package webui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 
 	"movistar-webdav-proxy/internal/config"
 	"movistar-webdav-proxy/internal/sapi"
+	"movistar-webdav-proxy/internal/updater"
 	"movistar-webdav-proxy/internal/webdav"
 )
 
@@ -735,7 +737,7 @@ func TestWebUI_Logout_DirectNavigationAndResidualBasicAuth(t *testing.T) {
 	}
 }
 
-func TestWebUI_CompleteLogin_O2_DirectOAuth(t *testing.T) {
+func TestWebUI_CompleteLogin_O2_CapturesSAPISession(t *testing.T) {
 	tmpDir := t.TempDir()
 	origTokensDir := config.TokensDir
 	config.TokensDir = tmpDir
@@ -757,6 +759,16 @@ func TestWebUI_CompleteLogin_O2_DirectOAuth(t *testing.T) {
 	var syncOnce sync.Once
 	sapiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/login/oauth") {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": map[string]interface{}{
+					"validationkey": "o2-sapi-valkey",
+					"jsessionid":    "o2-sapi-jsess",
+				},
+				"responsetime": 1794834400000,
+			})
+			return
+		}
 		if strings.Contains(r.URL.Path, "/profile/changes") {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": map[string]interface{}{}})
 			syncOnce.Do(func() { close(syncDone) })
@@ -818,10 +830,22 @@ func TestWebUI_CompleteLogin_O2_DirectOAuth(t *testing.T) {
 	if savedCfg.RefreshToken != "o2-refresh-token-456" {
 		t.Errorf("RefreshToken = %q, want o2-refresh-token-456", savedCfg.RefreshToken)
 	}
+	if savedCfg.ValidationKey != "o2-sapi-valkey" {
+		t.Errorf("ValidationKey = %q, want o2-sapi-valkey", savedCfg.ValidationKey)
+	}
+	if savedCfg.JSessionID != "o2-sapi-jsess" {
+		t.Errorf("JSessionID = %q, want o2-sapi-jsess", savedCfg.JSessionID)
+	}
 
 	clientCfg := client.GetConfig()
 	if clientCfg.AccessToken != "o2-access-token-123" {
 		t.Errorf("clientCfg.AccessToken = %q, want 'o2-access-token-123'", clientCfg.AccessToken)
+	}
+	if clientCfg.ValidationKey != "o2-sapi-valkey" {
+		t.Errorf("clientCfg.ValidationKey = %q, want 'o2-sapi-valkey'", clientCfg.ValidationKey)
+	}
+	if clientCfg.JSessionID != "o2-sapi-jsess" {
+		t.Errorf("clientCfg.JSessionID = %q, want 'o2-sapi-jsess'", clientCfg.JSessionID)
 	}
 }
 
@@ -916,5 +940,187 @@ func TestWebUI_CompleteLogin_Movistar_CapturesSAPISession(t *testing.T) {
 	}
 	if savedCfg.JSessionID != "mov-sapi-jsess" {
 		t.Errorf("savedCfg.JSessionID = %q, want 'mov-sapi-jsess'", savedCfg.JSessionID)
+	}
+}
+
+func TestWebUI_CompleteLogin_RejectsWhenSAPIReturns401(t *testing.T) {
+	tmpDir := t.TempDir()
+	origTokensDir := config.TokensDir
+	config.TokensDir = tmpDir
+	t.Cleanup(func() { config.TokensDir = origTokensDir })
+
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json;charset=UTF-8")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token":  "o2-access-token-123",
+			"refresh_token": "o2-refresh-token-456",
+			"expires_in":    3600,
+			"token_type":    "Bearer",
+		})
+	}))
+	defer tokenServer.Close()
+	t.Setenv("OAUTH_TOKEN_URL", tokenServer.URL)
+
+	syncCalled := false
+	sapiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/login/oauth") {
+			w.Header().Set("Server", "CloudFront")
+			w.Header().Set("X-Cache", "Error from cloudfront")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/profile/changes") {
+			syncCalled = true
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer sapiServer.Close()
+	t.Setenv("SAPI_BASE_URL", sapiServer.URL+"/sapi")
+
+	client, err := sapi.NewClient(config.AccountConfig{})
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+	authCfg := config.AuthConfig{AuthDisabled: true}
+	davSrv := webdav.NewServerWithAuth(client, authCfg)
+	davSrv.SetRunning(false)
+	uiSrv := NewServerWithAuth(client, davSrv, authCfg)
+	handler := uiSrv.Routes()
+
+	startReq := httptest.NewRequest("POST", "/start_login", strings.NewReader(`{"phone":"612345678","provider":"o2"}`))
+	startReq.Header.Set("Content-Type", "application/json")
+	startRec := httptest.NewRecorder()
+	handler.ServeHTTP(startRec, startReq)
+	if startRec.Code != http.StatusOK {
+		t.Fatalf("/start_login failed with code %d: %s", startRec.Code, startRec.Body.String())
+	}
+
+	completeReq := httptest.NewRequest("POST", "/complete_login", strings.NewReader(`{"phone":"612345678","provider":"o2","code_or_url":"test-code"}`))
+	completeReq.Header.Set("Content-Type", "application/json")
+	completeRec := httptest.NewRecorder()
+	handler.ServeHTTP(completeRec, completeReq)
+
+	if completeRec.Code != http.StatusBadGateway {
+		t.Fatalf("/complete_login code = %d, want %d (body: %s)", completeRec.Code, http.StatusBadGateway, completeRec.Body.String())
+	}
+	if !strings.Contains(completeRec.Body.String(), `"status":"error"`) {
+		t.Errorf("expected error payload, got: %s", completeRec.Body.String())
+	}
+	if savedCfg := config.LoadAccountConfig("612345678"); savedCfg.AccessToken != "" || savedCfg.RefreshToken != "" {
+		t.Errorf("broken account config was persisted despite SAPI 401: %+v", savedCfg)
+	}
+	if client.HasCredentials() {
+		t.Errorf("client.HasCredentials() = true, want false after SAPI 401")
+	}
+	if davSrv.IsRunning() {
+		t.Errorf("davSrv.IsRunning() = true, want false after SAPI 401")
+	}
+	if syncCalled {
+		t.Errorf("initial sync was triggered despite SAPI 401")
+	}
+}
+
+func TestWebUI_UpdateNotificationOncePerSession(t *testing.T) {
+	tmpDir := t.TempDir()
+	origTokensDir := config.TokensDir
+	config.TokensDir = tmpDir
+	t.Cleanup(func() { config.TokensDir = origTokensDir })
+
+	releaseServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"tag_name":   "v9.9.9",
+			"html_url":   updater.DefaultReleasesPageURL + "/tag/v9.9.9",
+			"draft":      false,
+			"prerelease": false,
+		})
+	}))
+	defer releaseServer.Close()
+
+	client, err := sapi.NewClient(config.AccountConfig{})
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+	authCfg := config.AuthConfig{Username: "admin", Password: "secretpassword"}
+	davSrv := webdav.NewServerWithAuth(client, authCfg)
+	uiSrv := NewServerWithAuth(client, davSrv, authCfg)
+
+	checker := updater.NewCheckerWithOptions(
+		releaseServer.URL,
+		filepath.Join(tmpDir, ".last_notified_release"),
+		func() string { return "v2.6.12" },
+		func(latestVer, currentVer, releaseURL string) error { return nil },
+	)
+	checker.CheckOnce(context.Background())
+	uiSrv.SetUpdateChecker(checker)
+
+	handler := uiSrv.Routes()
+
+	formData := url.Values{"username": {"admin"}, "password": {"secretpassword"}}
+	loginReq := httptest.NewRequest("POST", "/login", strings.NewReader(formData.Encode()))
+	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginRec := httptest.NewRecorder()
+	handler.ServeHTTP(loginRec, loginReq)
+	if loginRec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 on login, got %d", loginRec.Code)
+	}
+
+	var sessionCookie *http.Cookie
+	for _, c := range loginRec.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatalf("expected session cookie %s", sessionCookieName)
+	}
+
+	// First /status in session must set notify_update_session=true.
+	req1 := httptest.NewRequest("GET", "/status", nil)
+	req1.AddCookie(sessionCookie)
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("first /status returned %d", rec1.Code)
+	}
+	var st1 map[string]interface{}
+	if err := json.Unmarshal(rec1.Body.Bytes(), &st1); err != nil {
+		t.Fatal(err)
+	}
+	if st1["update_available"] != true || st1["latest_version"] != "v9.9.9" || st1["notify_update_session"] != true {
+		t.Fatalf("unexpected first /status payload: %+v", st1)
+	}
+
+	// Second /status in same session must keep update_available=true but flip notify_update_session=false.
+	req2 := httptest.NewRequest("GET", "/status", nil)
+	req2.AddCookie(sessionCookie)
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second /status returned %d", rec2.Code)
+	}
+	var st2 map[string]interface{}
+	if err := json.Unmarshal(rec2.Body.Bytes(), &st2); err != nil {
+		t.Fatal(err)
+	}
+	if st2["update_available"] != true || st2["notify_update_session"] != false {
+		t.Fatalf("unexpected second /status payload: %+v", st2)
+	}
+
+	// /version must also expose release availability fields.
+	verReq := httptest.NewRequest("GET", "/version", nil)
+	verReq.AddCookie(sessionCookie)
+	verRec := httptest.NewRecorder()
+	handler.ServeHTTP(verRec, verReq)
+	if verRec.Code != http.StatusOK {
+		t.Fatalf("/version returned %d", verRec.Code)
+	}
+	var verData map[string]interface{}
+	if err := json.Unmarshal(verRec.Body.Bytes(), &verData); err != nil {
+		t.Fatal(err)
+	}
+	if verData["update_available"] != true || verData["latest_version"] != "v9.9.9" {
+		t.Fatalf("unexpected /version payload: %+v", verData)
 	}
 }

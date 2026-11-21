@@ -18,11 +18,12 @@ import (
 )
 
 func TestControlLockVirtualEmulation(t *testing.T) {
+	t.Setenv("WEBDAV_REAL_EMPTY_FILES", "false") // emulación de vacíos (como antes)
 	var sapiFolderCreateCount atomic.Int32
 	var sapiFolderDeleteCount atomic.Int32
 	var sapiUploadCount atomic.Int32
 
-	mockSAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockSAPI := newShimServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		p := r.URL.Path
 		action := r.URL.Query().Get("action")
@@ -215,6 +216,7 @@ func TestHyperBackupWriterStateIsPersistent(t *testing.T) {
 }
 
 func TestAutoHealHyperBackupWriterCinfo(t *testing.T) {
+	t.Setenv("WEBDAV_REAL_EMPTY_FILES", "false") // emulación de vacíos (como antes)
 	tmpDir := t.TempDir()
 	seqDBPath := filepath.Join(tmpDir, "seq_mapping.db")
 
@@ -242,7 +244,7 @@ func TestAutoHealHyperBackupWriterCinfo(t *testing.T) {
 		t.Fatalf("failed to read seq_mapping bytes: %v", err)
 	}
 
-	mockSAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockSAPI := newShimServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		action := r.URL.Query().Get("action")
 
