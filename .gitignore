@@ -75,3 +75,6 @@ docker_app/
 *.bundle.js
 .agent/
 .webprofile/
+
+# adicional
+docker-compose.override.yml
