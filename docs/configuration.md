@@ -55,7 +55,7 @@ Esta guía reúne toda la referencia técnica de Movistar / O2 Cloud WebDAV prox
 > [!WARNING]
 > Si activas `GALLERY_ENABLED=true` y ejecutas `rclone sync <local> remoto:` contra la raíz `/`, añade `--exclude "/_gallery/**"` (o el nombre de `GALLERY_DIR`) para evitar que `rclone` intente borrar la carpeta virtual de destino.
 
-### 🔔 Notificaciones de Telegram (PR #53)
+### 🔔 Notificaciones de Telegram 🤖 (PR #53)
 
 | Variable | Por defecto | Descripción |
 | :--- | :--- | :--- |
