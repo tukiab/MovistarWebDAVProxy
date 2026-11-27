@@ -243,10 +243,6 @@ Para lograrlo en **DSM 7** necesitas un dominio con certificado SSL, para lo cua
 * **[DDNS de Synology](https://kb.synology.com/es-es/DSM/help/DSM/AdminCenter/connection_ddns?version=7) (recomendado):** Puedes configurar cualquiera de los proveedores compatibles en **Panel de control > Acceso externo > DDNS**, aunque utilizar el propio servicio de Synology (`*.synology.me`) ofrece la ventaja de la **renovación automática del certificado Let's Encrypt** (incluyendo comodín *wildcard* para usar subdominios como `panel.` y `webdav.` en el puerto `443`) y mayor simplicidad.  Además, en la configuración de **Dirección externa** de Synology DDNS puedes dejarla en **Automático** (resuelve a tu IP pública para acceso remoto) o escribir manualmente la **IP privada del NAS** (ej. `192.168.1.2`) si solo quieres resolverlo dentro de tu red local. Al usar el puerto estándar `443`, también evitas que los navegadores realicen peticiones DNS `HTTPS/SVCB` adicionales con prefijo de puerto (como `_8443._https.192-168-1-2.tuQuickConnectID.direct.quickconnect.to`).
 * **Dominio automático de [QuickConnect](https://kb.synology.com/es-es/DSM/help/DSM/AdminCenter/connection_quickconnect?version=7) (`*.tuQuickConnectID.direct.quickconnect.to`):** Si quieres usar HTTPS válido **únicamente dentro de tu red local** (sin abrir puertos ni configurar un DDNS externo), puedes aprovechar el certificado que genera QuickConnect para el subdominio con la IP local de tu NAS con guiones (ej. `192-168-1-2.tuQuickConnectID.direct.quickconnect.to`, que resuelve directamente a `192.168.1.2`). Como no permite crear subdominios personalizados adicionales sobre él, debes usar **dos puertos distintos sin uso** en el origen de cada regla (por ejemplo, `8443` para el Panel Web y `8444` para WebDAV), ya que Synology no permite repetir la misma combinación de host y puerto. **No es necesario cambiar los puertos internos del contenedor (`PORT` ni `WEBDAV_HOST_PORT`)**, ya que el proxy inverso de Synology redirige esos puertos externos hacia los internos por defecto (`5000` y `5050`).
 
-> [!WARNING]
-> Mantén los *puertos cerrados* en tu router. No configures ningún reenvío de puertos (Port Forwarding) hacia el NAS, salvo que tengas los conocimientos técnicos necesarios y sepas exactamente lo que estás haciendo. Así garantizas que nadie desde fuera pueda entrar.
-
-
 
 #### Pasos de configuración del proxy inverso
 
@@ -278,6 +274,28 @@ Para lograrlo en **DSM 7** necesitas un dominio con certificado SSL, para lo cua
      * Pulsa **Crear** de nuevo y configura Origen `HTTPS` (`webdav.subdominioddns.synology.me`, puerto `443`) $\rightarrow$ Destino `HTTP` (`localhost`, puerto `5050`).
      * En la pestaña **Configuración avanzada**, aumenta los tiempos de espera (*Tiempo de espera de lectura/envío del proxy*) si vas a transferir archivos grandes cercanos al límite de 4 GB de Movistar/O2 Cloud.
      * *Nota:* Esta regla es útil si quieres acceder al **Explorador Web** o montar WebDAV desde fuera de tu red local. **Si solo vas a usar Hyper Backup en el propio NAS**, no necesitas crear esta regla ni configurar `WEBDAV_URL` con dominio externo: conéctalo directamente en local por HTTP (`http://localhost:5050` o la IP interna del contenedor).
+
+
+#### Resolución DNS Local y Protección DNS Rebinding
+
+Para utilizar HTTPS en la red local mediante un dominio sin exponer el NAS a Internet, es necesario que el dominio resuelva a la IP privada del NAS dentro de la LAN (por ejemplo, `192.168.1.50`).
+
+> [!WARNING]
+> Mantén los **puertos cerrados** en tu router. No configures ningún reenvío de puertos (*Port Forwarding*) hacia el NAS, salvo que tengas los conocimientos técnicos necesarios y sepas exactamente lo que estás haciendo. Así garantizas que nadie desde fuera pueda entrar por error.
+
+#### Posible bloqueo por *DNS Rebind Protection*
+
+Muchos routers (como Fritz!Box, pfSense, OPNsense o Asuswrt-Merlin) y servidores DNS filtradores (como Pi-hole, AdGuard Home o Unbound) incluyen por defecto una medida de seguridad llamada **DNS Rebind Protection**.
+
+* **¿Qué hace?** Bloquea cualquier consulta DNS pública que devuelva como resultado una dirección IP privada (`192.168.x.x`, `10.x.x.x`, `172.16.x.x`) para prevenir ataques de *DNS Rebinding*.
+* **Síntoma:** Al intentar acceder a `https://synology.me` desde la red local, el navegador no carga la página o devuelve un error de resolución DNS (`NXDOMAIN` o `SERVFAIL`).
+
+#### Soluciones recomendadas
+
+1. **Usar Split DNS (DNS dividido / DNS de horizonte):** Configura un registro `A` local en tu servidor DNS interno (paquete *DNS Server* de Synology, Pi-hole, AdGuard Home) o en el archivo `hosts` del equipo cliente apuntando tu dominio DDNS directamente a la IP local del NAS. De este modo, la consulta se resuelve en la LAN sin salir al exterior. También lo puedes hacer en servicios como NextDNS o Control a través de reglas de reescritura.
+2. **Añadir excepción en el router/firewall:** Si utilizas el router como servidor DNS principal y bloquea la resolución interna, añade tu dominio (`tudominio.synology.me`) a la lista blanca (*Rebind Protection Whitelist* / *Private Domain*) en los ajustes de red o DNS del router.
+
+
 
 ---
 
