@@ -287,7 +287,7 @@ Para lograrlo en **DSM 7** necesitas un dominio con certificado SSL, para lo cua
 
 #### Resolución DNS Local y Protección DNS Rebinding
 
-Para utilizar HTTPS en la red local mediante un dominio sin exponer el NAS a Internet, es necesario que el dominio resuelva a la IP privada del NAS dentro de la LAN (por ejemplo, `192.168.1.50`).
+Para utilizar HTTPS en la red local mediante un dominio sin exponer el NAS a Internet, es necesario que el dominio resuelva a la IP privada del NAS dentro de la LAN (por ejemplo, `192.168.1.2`).
 
 > [!WARNING]
 > Mantén los **puertos cerrados** en tu router. No configures ningún reenvío de puertos (*Port Forwarding*) hacia el NAS, salvo que tengas los conocimientos técnicos necesarios y sepas exactamente lo que estás haciendo. Así garantizas que nadie desde fuera pueda entrar por error.
@@ -297,11 +297,11 @@ Para utilizar HTTPS en la red local mediante un dominio sin exponer el NAS a Int
 Muchos routers (como Fritz!Box, pfSense, OPNsense o Asuswrt-Merlin) y servidores DNS filtradores (como Pi-hole, AdGuard Home o Unbound) incluyen por defecto una medida de seguridad llamada **DNS Rebind Protection**.
 
 * **¿Qué hace?** Bloquea cualquier consulta DNS pública que devuelva como resultado una dirección IP privada (`192.168.x.x`, `10.x.x.x`, `172.16.x.x`) para prevenir ataques de *DNS Rebinding*.
-* **Síntoma:** Al intentar acceder a `https://synology.me` desde la red local, el navegador no carga la página o devuelve un error de resolución DNS (`NXDOMAIN` o `SERVFAIL`).
+* **Síntoma:** Al intentar acceder desde la red local, el navegador no carga la página o devuelve un error de resolución DNS (`NXDOMAIN` o `SERVFAIL`).
 
 #### Soluciones recomendadas
 
-1. **Usar Split DNS (DNS dividido / DNS de horizonte):** Configura un registro `A` local en tu servidor DNS interno (paquete *DNS Server* de Synology, Pi-hole, AdGuard Home) o en el archivo `hosts` del equipo cliente apuntando tu dominio DDNS directamente a la IP local del NAS. De este modo, la consulta se resuelve en la LAN sin salir al exterior. También lo puedes hacer en servicios como NextDNS o Control D a través de reglas de reescritura.
+1. **Usar Split DNS (DNS dividido / DNS de horizonte):** Configura un registro `A` local en tu servidor DNS interno (paquete *DNS Server* de Synology, Pi-hole, AdGuard Home) o en el archivo `hosts` del equipo cliente apuntando tu dominio DDNS directamente a la IP local del NAS. De este modo, la consulta se resuelve en la LAN sin salir al exterior. También lo puedes hacer en servicios como NextDNS o Control D a través de reglas de *reescritura o Conditional Forwarding*.
 2. **Añadir excepción en el router/firewall:** Si utilizas el router como servidor DNS principal y bloquea la resolución interna, añade tu dominio (`tudominio.synology.me`) a la lista blanca (*Rebind Protection Whitelist* / *Private Domain*) en los ajustes de red o DNS del router.
 
 
