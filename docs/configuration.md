@@ -1,6 +1,6 @@
 # Configuración Avanzada, Seguridad y Red 🔧🔒
 
-Esta guía reúne toda la referencia técnica del proxy: variables de entorno completas, alertas de Telegram, arquitectura de autenticación y seguridad, configuración de proxies inversos (Nginx/NPM/Traefik/Synology DSM), red Docker, filtro de basura del SO y limitaciones técnicas de la API de Movistar / O2 Cloud.
+Esta guía reúne toda la referencia técnica de Movistar / O2 Cloud WebDAV proxy: variables de entorno completas, alertas de Telegram, arquitectura de autenticación y seguridad, configuración de proxies inversos (Nginx/NPM/Traefik/Synology DSM), red Docker, filtro de basura del SO y limitaciones técnicas de la API de Movistar / O2 Cloud.
 
 > [!TIP]
 > **¿Prefieres configurarlo sin editar YAML a mano?** Usa el **[Generador Web Interactivo](https://uniextra.github.io/MovistarWebDAVProxy/)** para elegir tus variables y descargar tu `docker-compose.yml`, `docker run` o `.env` listo para usar *(100 % local en tu navegador)*.
@@ -8,6 +8,11 @@ Esta guía reúne toda la referencia técnica del proxy: variables de entorno co
 ---
 
 ## 📋 1. Tabla Completa de Variables de Entorno
+
+> [!NOTE]
+> **Perfiles y modos de autenticación:**
+> * **Perfil `desktop` (por defecto):** Emula el cliente oficial de escritorio de Windows. Se vincula mediante **emparejamiento por SMS (OAuth2)** desde el panel web (`:5000`) y es el modo recomendado para uso estándar.
+> * **Perfil `browser` o [Modo Web](web-mode.md) (`WEB_SESSION=true`):** Emula un navegador Chrome e inicia sesión mediante el portal web de Movistar/O2 Cloud (requiere la imagen `Dockerfile.web` con Chromium integrado).
 
 ### 🔐 Autenticación y Acceso
 
@@ -28,8 +33,10 @@ Esta guía reúne toda la referencia técnica del proxy: variables de entorno co
 | Variable | Por defecto | Descripción |
 | :--- | :--- | :--- |
 | `PORT` | `5000` | Puerto interno del servidor del Panel Web. |
-| `WEBDAV_PORT` | `8080` | Puerto interno del servidor WebDAV. |
+| `WEBUI_URL` | *(vacío)* | URL pública o de red local del Panel WebUI (ej. `https://panelproxywebdav.midominio.com`, `https://192-168-0-2.tuquickconnect.direct.quickconnect.to:5500/`, `https://proxywebdav-panel.subdominioddns.synology.me`). **Solo necesaria si usas proxy inverso** o dominio propio/DDNS; en acceso local no hace falta configurarla. Recuerda no exponer directamente a Internet dicho acceso. |
 | `WEBDAV_HOST_PORT` | `5050` | Puerto público de WebDAV mostrado en el panel; en Docker Compose toma el valor de `WEBDAV_PORT`. |
+| `WEBDAV_URL` | *(vacío)* | URL del servidor WebDAV. **Solo necesaria si usas proxy inverso**, para que el botón **Explorador** del panel apunte a la dirección correcta; en red local se calcula automáticamente. |
+| `WEBDAV_PORT` | `8080` | Puerto interno del servidor WebDAV. |
 | `TOKENS_DIR` | `/app/tokens` | Directorio donde se almacenan las credenciales OAuth2 (`0700`) y la caché SQLite. |
 | `TOKENS_ENCRYPTION_KEY` | *(vacío)* | Clave opcional para cifrar en reposo (**AES-256-GCM**) los tokens y secretos guardados en `account_<tel>.env`. |
 | `WEBDAV_TMPDIR` | `/tmp` *(o `TMPDIR`)* | Directorio para archivos temporales durante subidas mayores al búfer RAM. Si montas un volumen en disco (ej. `/app/tmp`), define `WEBDAV_TMPDIR=/app/tmp` para usarlo. |
@@ -56,7 +63,7 @@ Esta guía reúne toda la referencia técnica del proxy: variables de entorno co
 | `TELEGRAM_CHAT_ID` | *(vacío)* | Identificador del chat o canal de Telegram que recibirá las alertas. |
 
 > [!TIP]
-> **Funcionamiento desde el segundo cero:** Desde la versión **v2.5.6** (PR #53), el notificador de Telegram es global y carga `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` automáticamente al iniciar el proceso, sin necesidad de abrir el panel web previamente. Si además guardas credenciales desde el panel web en `/app/tokens`, estas actualizan las activas al cargar la cuenta; si posteriormente desvinculas la cuenta o limpias esos campos en la web, el notificador vuelve a usar automáticamente las variables de entorno definidas en Docker.
+> **Funcionamiento desde el segundo cero:** Desde la versión **v2.5.6** (PR #53), el notificador de Telegram es global y funciona enviando alertas desde que arranca el contenedor. Si lo configuras  únicamente desde el panel web, **no recibirás avisos de arranque ni otras alertas como cuenta sin vincular** hasta que inicies sesión. Por ello se recomienda definir `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` directamente en las variables de entorno de Docker (incluido para recibir el aviso de sesión pendiente). Si además guardas credenciales desde el panel web en `/app/tokens`, estas actualizan las activas mientras la cuenta esté vinculada y vuelven automáticamente a las variables de Docker si la desvinculas.
 
 ### ⚡ Rendimiento, Concurrencia y Red
 
@@ -221,6 +228,47 @@ Los valores en segundos admiten decimales (`0.5`). Un valor vacío o no válido 
     ```
   * **Nota para clientes Linux GVFS (Thunar / Nautilus `davs://`):** `gvfsd-dav` / `libsoup` presenta una limitación histórica de entero con signo de 32 bits (**2 GiB**) por archivo; para subir archivos de entre 2 GB y 4 GB desde Linux utiliza **Rclone** o `curl`.
 * **Docker Host (`network_mode: host`):** En Linux nativo permite observar la IP real directa del socket. En Docker Desktop (Windows/macOS), debido a la máquina virtual interna, la topología recomendada es el modo bridge con mapeo de puertos o proxy inverso.
+
+### Ejemplo: Configuración en Synology DSM 7 (HTTPS)
+
+Si tienes un NAS Synology, dispones de un **[proxy inverso integrado](https://kb.synology.com/en-global/DSM/help/DSM/AdminCenter/system_login_portal_advanced?version=7)** así como opciones para generar y utilizar [certificados SSL](https://kb.synology.com/es-es/DSM/help/DSM/AdminCenter/connection_certificate?version=7) válidos.
+
+Configurar el acceso mediante HTTPS con un certificado válido **elimina las alertas de seguridad / certificado no válido en el navegador** y cifra todo el tráfico (incluidas las credenciales), mejorando sustancialmente la seguridad frente al acceso por HTTP plano cuando te conectas desde **redes Wi-Fi** o fuera de tu red local.
+
+Para lograrlo en **DSM 7** necesitas un dominio con certificado SSL, para lo cual tienes dos opciones principales:
+* **[DDNS de Synology](https://kb.synology.com/es-es/DSM/help/DSM/AdminCenter/connection_ddns?version=7) (recomendado):** Puedes configurar cualquiera de los proveedores compatibles en **Panel de control > Acceso externo > DDNS**, aunque utilizar el propio servicio de Synology (`*.synology.me`) ofrece la ventaja de la **renovación automática del certificado Let's Encrypt** (incluyendo comodín *wildcard* para usar subdominios como `panel.` y `webdav.` en el puerto `443`) y mayor simplicidad.  Además, en la configuración de **Dirección externa** de Synology DDNS puedes dejarla en **Automático** (resuelve a tu IP pública para acceso remoto) o escribir manualmente la **IP privada del NAS** (ej. `192.168.1.2`) si solo quieres resolverlo dentro de tu red local. Al usar el puerto estándar `443`, también evitas que los navegadores realicen peticiones DNS `HTTPS/SVCB` adicionales con prefijo de puerto (como `_8443._https.192-168-1-2.tuQuickConnectID.direct.quickconnect.to`).
+* **Dominio automático de [QuickConnect](https://kb.synology.com/es-es/DSM/help/DSM/AdminCenter/connection_quickconnect?version=7) (`*.tuQuickConnectID.direct.quickconnect.to`):** Si quieres usar HTTPS válido **únicamente dentro de tu red local** (sin abrir puertos ni configurar un DDNS externo), puedes aprovechar el certificado que genera QuickConnect para el subdominio con la IP local de tu NAS con guiones (ej. `192-168-1-2.tuQuickConnectID.direct.quickconnect.to`, que resuelve directamente a `192.168.1.2`). Como no permite crear subdominios personalizados adicionales sobre él, debes usar **dos puertos distintos sin uso** en el origen de cada regla (por ejemplo, `8443` para el Panel Web y `8444` para WebDAV), ya que Synology no permite repetir la misma combinación de host y puerto. **No es necesario cambiar los puertos internos del contenedor (`PORT` ni `WEBDAV_HOST_PORT`)**, ya que el proxy inverso de Synology redirige esos puertos externos hacia los internos por defecto (`5000` y `5050`).
+
+#### Pasos de configuración del proxy inverso
+
+1. **Configuración YAML del proyecto del contenedor** en `docker-compose.yml`:
+   En la configuración YAML de tu proyecto en **Container Manager**, revisa que tengas añadidas las variables de URL pública (`WEBUI_URL` y, opcionalmente, `WEBDAV_URL`, incluyendo el puerto si usas `direct.quickconnect.to`) y que `TRUSTED_PROXIES` incluya la IP o subred de la red *bridge* del contenedor para que el sistema de protección contra fuerza bruta (rate-limiting) lea la IP real del cliente mediante `X-Forwarded-For` y no bloquee por error la IP interna de Docker, ya que el tráfico llegará al contenedor a través del proxy inverso.
+   ```yaml
+   environment:
+     - WEBUI_URL=https://panel.subdominioddns.synology.me
+     - WEBDAV_URL=https://webdav.subdominioddns.synology.me
+     - TRUSTED_PROXIES=127.0.0.1,172.17.0.0/16
+   ```
+   *(Recuerda que si utilizas el dominio automático de QuickConnect (`*.direct.quickconnect.to`), debes añadir el puerto asignado al final de cada URL, por ejemplo: `https://192-168-1-2.tuQuickConnectID.direct.quickconnect.to:8443`).*   
+
+2. **Crear las reglas en DSM 7 (`Panel de control → Portal de inicio de sesión → Avanzado → Proxy inverso`):**
+   * **Panel Web (`:5000`):**
+     * Pulsa **Crear** y en la pestaña **General** rellena:
+       * **Nombre del proxy inverso:** `Movistar WebDAV panel`
+       * **Origen:**
+         * Protocolo: `HTTPS`
+         * Nombre de host: `panel.subdominioddns.synology.me`
+         * Puerto: `443`
+         * Habilitar HSTS: Opcional *(recomendado si usas certificado Let's Encrypt válido)*
+       * **Destino:**
+         * Protocolo: `HTTP`
+         * Nombre de host: `127.0.0.1`
+         * Puerto: `5000`
+     * En la pestaña **Encabezado personalizado**, pulsa **Crear > WebSocket** (añade automáticamente `Upgrade` y `Connection`; Synology DSM ya incluye `X-Forwarded-For`, `X-Forwarded-Proto` y `X-Real-IP` por defecto).
+   * **Servidor WebDAV (`:5050`):**
+     * Pulsa **Crear** de nuevo y configura Origen `HTTPS` (`webdav.subdominioddns.synology.me`, puerto `443`) $\rightarrow$ Destino `HTTP` (`localhost`, puerto `5050`).
+     * En la pestaña **Configuración avanzada**, aumenta los tiempos de espera (*Tiempo de espera de lectura/envío del proxy*) si vas a transferir archivos grandes cercanos al límite de 4 GB de Movistar/O2 Cloud.
+     * *Nota:* Esta regla es útil si quieres acceder al **Explorador Web** o montar WebDAV desde fuera de tu red local. **Si solo vas a usar Hyper Backup en el propio NAS**, no necesitas crear esta regla ni configurar `WEBDAV_URL` con dominio externo: conéctalo directamente en local por HTTP (`http://localhost:5050` o la IP interna del contenedor).
 
 ---
 

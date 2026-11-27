@@ -4,27 +4,43 @@ Esta guía detalla la configuración óptima para realizar copias de seguridad a
 
 ---
 
-## 🗄️ 1. Synology HyperBackup
+## 🗄️ 1. Synology Hyper Backup
 
-HyperBackup de Synology NAS es 100% compatible con el proxy WebDAV de Movistar/O2 Cloud gracias a la implementación de las cuotas virtuales RFC 4331 y el soporte de repositorios `.hbk`.
+[Hyper Backup](https://kb.synology.com/es-es/DSM/help/HyperBackup/BackupApp_desc?version=7) de Synology NAS es 100 % compatible con el proxy WebDAV de Movistar/O2 Cloud gracias a la implementación de las cuotas virtuales RFC 4331 y el soporte de repositorios `.hbk`.
 
-### Pasos de Configuración:
+### Pasos de configuración
 
 1. En tu NAS Synology (DSM), abre **Hyper Backup**.
-2. Pulsa en el icono `+` para crear una nueva tarea de copia de seguridad de datos.
-3. En la lista de destinos, selecciona **WebDAV** dentro de la categoría *Servidor de archivos*.
-4. Configura los parámetros de conexión:
-   * **Dirección del servidor:** `http://IP_DE_TU_SERVIDOR:5050` (o `https://dominio.com` con proxy inverso).
+2. Pulsa en el icono **`+`** para [crear una nueva tarea de copia de seguridad de datos](https://kb.synology.com/es-es/DSM/help/HyperBackup/data_backup_create?version=7#b_5).
+3. Selecciona el tipo de destino de copia de seguridad **Carpetas y paquetes** (para respaldar tanto los datos de los paquetes de DSM como las carpetas compartidas) y pulsa **Siguiente**.
+4. En la lista de destinos, selecciona **WebDAV** dentro de la categoría *Servidor de archivos* y pulsa **Siguiente**.
+5. Configura el tipo de tarea y los parámetros de conexión:
+   * **Crear tarea de copia de seguridad:** para iniciar una copia completamente nueva.
+   * **Volver a vincular a tarea existente:** para reutilizar o restaurar los datos de un repositorio `.hbk` que ya exista en la nube. Tendrás que introducir la clave de cifrado en caso de tenerlo.
+   * **Dirección del servidor:**
+     * **Contenedor en el mismo NAS (recomendado):** `http://127.0.0.1:5050` o `http://IP_LOCAL_DEL_NAS:5050`. Al no salir el tráfico WebDAV del propio NAS, usar HTTP local es seguro y evita sobrecarga o límites de *timeout* del proxy inverso.
+     * **Servidor externo / remoto:** `https://dominio.com` (a través de [proxy inverso](configuration.md#-6-topologías-de-red-docker-y-proxies-inversos)).
    * **Nombre de usuario:** El usuario configurado en `WEBDAV_USER` (ej. `admin`).
    * **Contraseña:** La contraseña configurada en `WEBDAV_PASSWORD`.
-   * **Carpeta:** Escribe o selecciona una carpeta dedicada (ejemplo: `HyperBackup_NAS`).
-   * **Directorio:** Nombre del repositorio `.hbk` que creará HyperBackup (ejemplo: `NAS_Backup.hbk`).
-5. Pulsa en **Siguiente** para seleccionar las carpetas compartidas de tu NAS que deseas incluir en la copia.
-6. Ajusta el calendario de programación y la rotación de versiones a tu preferencia.
-7. Guarda la tarea. El estado reportará **En línea** y podrás ejecutar la copia inmediatamente.
+   * **Carpeta:** Escribe o selecciona una carpeta dedicada (ej. `HyperBackup_NAS`).
+   * **Directorio:** Nombre del repositorio `.hbk` que creará Hyper Backup (ej. escribe `NAS_Backup_1`, que se guardará como `NAS_Backup_1.hbk`).
+   * Pulsa **Siguiente**.
+6. Selecciona las carpetas compartidas de tu NAS que deseas incluir en la copia (opcionalmente puedes aplicar filtros de archivos de inclusión o exclusión por nombre o extensión) y pulsa **Siguiente**.
+7. Elige las aplicaciones compatibles de DSM que quieras respaldar (ej. *Synology Drive Server*, *Synology Photos*, etc.) y pulsa **Siguiente**.
+8. Configura las opciones generales de la tarea:
+   * **Nombre de la tarea:** Escribe un nombre identificativo para la copia.
+   * **Programación de copia de seguridad:** Habilita esta opción y elige los días (frecuencia) y la hora a la que deseas que se ejecute la copia de forma automática.
+   * **Programación de verificación de integridad:** Habilita esta opción y selecciona las fechas y horas en las que DSM comprobará periódicamente que los datos del repositorio no estén dañados.
+   * **Compresión:** Viene marcada por defecto para reducir el tamaño de los datos antes de subirlos.
+   * **Cifrado del lado cliente (muy recomendado):** Marca la casilla **Habilitar cifrado del lado cliente**. Al igual que ocurre en otras nubes comerciales (como Google Drive o Dropbox), en Movistar/O2 Cloud el transporte va cifrado pero los archivos no están cifrados con una clave privada del usuario. Al activar esta opción, Hyper Backup cifra todos los datos **en el propio NAS antes de subirlos** utilizando una contraseña que solo tú conoces, evitando que el proveedor o terceros puedan leer tu información.
+   * ⚠️ **Importante:** Introduce una contraseña única y compleja y guarda a buen recaudo (en diferentes ubicaciones) **tanto la contraseña como el archivo de clave `.pem`** que se descargará al finalizar; si los pierdes, **no podrás descifrar ni restaurar la copia de seguridad** bajo ningún concepto.
+   * Pulsa **Siguiente**.
+9. Ajusta la política de rotación de versiones según tus preferencias y pulsa **Siguiente**.
+10. Revisa los datos en la pantalla de resumen y pulsa **Finalizar** para guardar la tarea. Cuando te pregunte si deseas realizar la copia de seguridad ahora, pulsa **Sí**.
 
 > [!TIP]
-> Mantén siempre una carpeta dedicada y exclusiva para HyperBackup (ej: `/HyperBackup_NAS/`) para aislar los índices de DSM de otras copias.
+> Mantén siempre una carpeta dedicada y exclusiva para Hyper Backup (ej. `/HyperBackup_NAS/`) para aislar sus índices y bloques de otras copias. **Nunca sincronices esa carpeta** si tienes instalado el cliente oficial de escritorio de Movistar/O2 Cloud, ya que podría alterar o bloquear los archivos internos del repositorio `.hbk`.
+
 
 ---
 
