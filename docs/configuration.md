@@ -12,7 +12,7 @@ Esta guía reúne toda la referencia técnica de Movistar / O2 Cloud WebDAV prox
 > [!NOTE]
 > **Perfiles y modos de autenticación:**
 > * **Perfil `desktop` (por defecto):** Emula el cliente oficial de escritorio de Windows. Se vincula mediante **emparejamiento por SMS (OAuth2)** desde el panel web (`:5000`) y es el modo recomendado para uso estándar.
-> * **Perfil `browser` o [Modo Web](web-mode.md) (`WEB_SESSION=true`):** Emula un navegador Chrome e inicia sesión mediante el portal web de Movistar/O2 Cloud (requiere la imagen `Dockerfile.web` con Chromium integrado).
+> * **Perfil `browser` o [Modo Web](web-mode.md) (`WEB_SESSION=true`):** Emula un navegador Chrome e inicia sesión mediante el portal web de Movistar/O2 Cloud (requiere la imagen `Dockerfile.web` con Chromium integrado). - **Perfil `browser` o Modo Web (`WEB_SESSION=true`):** Emula un navegador Chrome e inicia sesión mediante el portal web de Movistar/O2 Cloud (requiere la imagen `Dockerfile.web` con Chromium integrado). Consulta sus variables específicas en la [Guía del Modo Web](web-mode.md).
 
 ### 🔐 Autenticación y Acceso
 
@@ -102,7 +102,7 @@ Esta guía reúne toda la referencia técnica de Movistar / O2 Cloud WebDAV prox
 | `SAPI_USER_AGENT` | *(según perfil)* | Fuerza el `User-Agent` enviado a SAPI. Por defecto: `DESKTOP_USER_AGENT` en el perfil `desktop`, `Mozilla/5.0 ... Chrome/133.0.0.0 ...` en `browser`. *(No usar `DESKTOP`: CloudFront lo rechaza con `401`.)* |
 | `OAUTH_REFRESH_FALLBACK` | `false` | Solo perfil `desktop`: si SAPI rechaza la sesión, permite como último recurso canjear el `refresh_token` en `apiseg` (el cliente oficial no lo hace nunca). |
 | `UTLS_CLIENT_HELLO` | *(según perfil)* | Huella TLS (`ClientHello`) hacia SAPI. Por defecto: `o2` (la del cliente oficial de Windows) en el perfil `desktop`, `chrome_auto` en `browser`. Otros valores para pruebas: `golang`, `chrome_auto`, `firefox_auto`, `safari_auto`, `ios`, `android`, `edge`, `chrome_120`, `randomized`. Ver la sección 4. |
-| `WEB_SESSION` | `false` | Activa el [Modo Web](web-mode.md) (requiere la imagen `Dockerfile.web`, donde viene a `true`). Sus variables específicas (`WEB_SESSION_RENEW_BEFORE`, `WEB_TRASH_EMPTY_EVERY`, `CHROME_PATH`, `CHROME_NO_SANDBOX`) se detallan en esa guía. |
+| `WEB_SESSION` | `false` | Activa el [Modo Web](web-mode.md) (requiere la imagen `Dockerfile.web`, donde viene a `true`). Sus variables específicas (`WEB_SESSION_RENEW_BEFORE`, `WEB_TRASH_EMPTY_EVERY`, `CHROME_PATH`, `CHROME_NO_SANDBOX`) se detallan en esa [guía](web-mode.md). |
 
 ---
 
