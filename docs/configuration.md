@@ -111,11 +111,15 @@ Con `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` configurados en tu `docker-compose
 * 🚀 **Arranque del servicio:** Confirma que el contenedor ha iniciado y muestra los puertos de escucha de WebDAV y Panel Web.
 * ⚠️ **Cuenta no vinculada o sesión web pendiente:** Si arranca sin tokens guardados (o en Modo Web sin sesión iniciada), avisa inmediatamente para que accedas al panel y completes el inicio de sesión.
 * ❌ **Fallos críticos de inicialización:** Notifica antes de detenerse si falla la inicialización del cliente SAPI o el arranque de Chromium en Modo Web.
-* ⚠️ **Sesión caducada:** Avisa cuando la sesión de Movistar / O2 Cloud expira y requiere revinculación (protegida con control antispam de **1 hora** por tipo de alerta para evitar mensajes repetitivos).
-* ⚠️ **Sesión web perdida y recuperada:** en Modo Web, si la sesión deja de valer más de 2 minutos (y cuando vuelve).
-* ✂️ **Rechazo por tamaño (`MED-1048`):** Movistar limita a veces el tamaño por subida de una cuenta tras mucho volumen. El aviso indica el tamaño rechazado y, si lo hay, el mayor aceptado, para ajustar el `chunk_size` del `chunker` de rclone por debajo del límite.
-* 📁 **Límite de carpetas de la cuenta (`FOL-1035`)** y **ráfagas de errores de escritura** (10 en 10 minutos).
+* 🛑 **Servidor WebDAV detenido:** Cuando el servidor WebDAV se detuvo inesperadamente.
+* ⚠️ **Sesión caducada:** Avisa cuando la sesión de Movistar / O2 Cloud expira y requiere revinculación (protegida con control antispam de **1 hora** por tipo de alerta para evitar mensajes repetitivos), accediendo al panel web para ello.
+* ⚠️ **Sesión web perdida y recuperada:** en Modo Web, si la sesión deja de valer más de 2 minutos (y cuando vuelve ✅).
+* 🛑 **Servidor WebUI detenido:** Cuando el panel de control WebUI se detuvo inesperadamente.
+* ✂️ **Rechazo por tamaño (`MED-1048`):** Movistar rechaza subidas por tamaño limitando a veces el tamaño por subida de una cuenta tras mucho volumen. El aviso indica el tamaño rechazado y, si lo hay, el mayor aceptado, para ajustar el `chunk_size` del `chunker` de rclone por debajo del límite.
+* 🚫 **Movistar: límite de carpetas alcanzado** de la cuenta 📁 (`FOL-1035`).
+* ❌ **Las subidas están fallando:** Notifica ráfagas de errores, si en los últimos 10 minutos hubo 10 errores de escritura.
 * ✅ **Fin o corte de la copia de un cliente**, si el cliente informa de ella (ver la sección 9).
+
 
 Los mensajes van en HTML con el texto escapado. Las peticiones a Telegram usan un transporte propio solo HTTP/1.1 y un envío con fallo de red se reintenta una vez: con HTTP/2 todos los envíos compartían una conexión y, si moría sin notarse (corte de red), los avisos y su reintento caducaban en ella.
 
