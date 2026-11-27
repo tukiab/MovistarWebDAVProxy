@@ -64,6 +64,8 @@ Esta guía reúne toda la referencia técnica de Movistar / O2 Cloud WebDAV prox
 
 > [!TIP]
 > **Funcionamiento desde el segundo cero:** Desde la versión **v2.5.6** (PR #53), el notificador de Telegram es global y funciona enviando alertas desde que arranca el contenedor. Si lo configuras  únicamente desde el panel web, **no recibirás avisos de arranque ni otras alertas como cuenta sin vincular** hasta que inicies sesión. Por ello se recomienda definir `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` directamente en las variables de entorno de Docker (incluido para recibir el aviso de sesión pendiente). Si además guardas credenciales desde el panel web en `/app/tokens`, estas actualizan las activas mientras la cuenta esté vinculada y vuelven automáticamente a las variables de Docker si la desvinculas.
+> Ver la [sección 2: Sistema de Alertas por Telegram](#-2-sistema-de-alertas-por-telegram) que enumera las principales.
+
 
 ### ⚡ Rendimiento, Concurrencia y Red
 
