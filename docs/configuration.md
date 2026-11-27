@@ -265,6 +265,7 @@ Para lograrlo en **DSM 7** necesitas un dominio con certificado SSL, para lo cua
          * Nombre de host: `panel.subdominioddns.synology.me`
          * Puerto: `443`
          * Habilitar HSTS: Opcional *(recomendado si usas certificado Let's Encrypt válido)*
+         * Perfil de control de acceso: *Opción recomendada* Puedes crear perfiles de control de acceso para restringir el acceso en función de la IP de origen, mejorando la seguridad.
        * **Destino:**
          * Protocolo: `HTTP`
          * Nombre de host: `127.0.0.1`
