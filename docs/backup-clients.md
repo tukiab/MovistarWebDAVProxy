@@ -4,6 +4,15 @@ Esta guía detalla la configuración óptima para realizar copias de seguridad a
 
 ---
 
+## 📑 Índice de Contenidos
+
+1. 🗄️ [Synology HyperBackup](#-1-synology-hyperbackup)
+2. 📦 [Duplicati](#-2-duplicati)
+3. ☁️ [Rclone (Sync y Backup)](#-3-rclone-sync-y-backup)
+ * 🔏 [Configuración avanzada: archivos de más de 4 GB (`chunker`) y cifrado (`crypt`)](#-configuración-avanzada-archivos-de-más-de-4-gb-chunker-y-cifrado-crypt)
+
+---
+
 ## 🗄️ 1. Synology Hyper Backup
 
 [Hyper Backup](https://kb.synology.com/es-es/DSM/help/HyperBackup/BackupApp_desc?version=7) de Synology NAS es 100 % compatible con el proxy WebDAV de Movistar/O2 Cloud gracias a la implementación de las cuotas virtuales RFC 4331 y el soporte de repositorios `.hbk`.
@@ -44,7 +53,7 @@ Esta guía detalla la configuración óptima para realizar copias de seguridad a
 
 ---
 
-## 🔄 2. Duplicati
+## 📦 2. Duplicati
 
 Duplicati es una solución multiplataforma de copias de seguridad encriptadas e incrementales compatible con Windows, Linux, macOS y Docker.
 
@@ -65,7 +74,7 @@ Duplicati es una solución multiplataforma de copias de seguridad encriptadas e 
 
 ---
 
-## 🚀 3. Rclone (Sync y Backup)
+## ☁️ 3. Rclone (Sync y Backup)
 
 Rclone permite sincronizar, copiar y respaldar directorios locales o de otros proveedores directamente contra Movistar Cloud.
 
@@ -104,7 +113,7 @@ pass = TuContraseñaOfuscadaConRcloneObscure
 
 ---
 
-### 📦 Configuración avanzada: archivos de más de 4 GB (chunker) y cifrado (crypt)
+### 🔏 Configuración avanzada: archivos de más de 4 GB (chunker) y cifrado (crypt)
 
 La API de Movistar / O2 Cloud rechaza cualquier archivo individual superior a **4 GB**. Para subir archivos de mayor tamaño hay que trocearlos con [`chunker`](https://rclone.org/chunker/), y opcionalmente cifrarlos con [`crypt`](https://rclone.org/crypt/). Esta configuración está probada con varios TB de datos:
 

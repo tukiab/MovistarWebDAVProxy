@@ -29,8 +29,10 @@ En la práctica, **convierte tu nube de Movistar u O2 en un disco duro en red ac
 1. 🌟 [Características Principales](#-características-principales)
 2. 🐳 [Paso 1: Despliegue con Docker](#-paso-1-despliegue-con-docker)
 3. 🔑 [Paso 2: Vinculación Inicial de la Cuenta](#-paso-2-vinculación-inicial-de-la-cuenta)
+  * 🖥️ [Opción A (Recomendada): Emparejamiento por SMS — OAuth2](#opción-a-recomendada-emparejamiento-por-sms--oauth2)
+  * 🌐 [Opción B (Alternativa): Modo Web con navegador integrado](#opción-b-alternativa-modo-web-con-navegador-integrado)
 4. 🔌 [Paso 3: Conectar Clientes y Unidades de Red](#-paso-3-conectar-clientes-y-unidades-de-red)
-5. 🌐 [Explorador Web](#-explorador-web-5050)
+5. 🗂️ [Explorador Web](#-explorador-web-5050)
 6. 🖼️ [Galería Virtual](#️-galería-virtuay--opcional)
 7. ⚙️ [Variables de Entorno Principales](#️-variables-de-entorno-principales)
 8. 🔔 [Notificaciones y Alertas de Telegram](#-notificaciones-y-alertas-de-telegram)
@@ -146,6 +148,8 @@ docker run -d \
 
 ### Opción A (Recomendada): Emparejamiento por SMS (OAuth2)
 
+Este es el modo **activo por defecto** (`SAPI_CLIENT_PROFILE=desktop`), en el que el proxy imita el comportamiento del cliente oficial de escritorio (Perfil `desktop`): 
+
 1. Abre tu navegador y entra al panel de control: `http://IP_DE_TU_SERVIDOR:5000`.
 2. Inicia sesión con tus credenciales (`WEBDAV_USER` / `WEBDAV_PASSWORD`, o `WEBUI_*` si las definiste).
 3. En la sección **📱 Dispositivo & Cuenta**, elige **Movistar Cloud** u **O2 Cloud**, introduce tu número de móvil y haz clic en el botón verde **"Vincular Dispositivo (OAuth2 SMS)"**.
@@ -155,13 +159,17 @@ docker run -d \
 
 ### Opción B (Alternativa): Modo Web con navegador integrado
 
-Si el emparejamiento por SMS del cliente de escritorio falla o es bloqueado en tu línea, puedes usar la **sesión web oficial** mediante un Chromium integrado sin pantalla (solo Movistar Cloud):
+Este modo utiliza el **Perfil browser** (`SAPI_CLIENT_PROFILE=browser` / `WEB_SESSION=true`), conectándose mediante la **sesión web oficial** a través de un Chromium integrado sin pantalla (solo Movistar Cloud).
+
+Es la alternativa recomendada si el emparejamiento por SMS del cliente de escritorio falla o es bloqueado en tu línea, y emplea un archivo Compose específico ([docker-compose.web.yml](docker-compose.web.yml)) en lugar del estándar (docker-compose.yml):
 
 ```bash
 docker compose -f docker-compose.web.yml up -d --build
 ```
 
-Abre el panel web (`:5000`), pulsa **🔐 Abrir inicio de sesión**, entra con **e-mail y contraseña** y marca **«No cerrar sesión»** para que el proxy la renueve automáticamente. Consulta todos los detalles en [docs/web-mode.md](docs/web-mode.md).
+Abre el panel web (`:5000`), pulsa **🔐 Abrir inicio de sesión**, entra con **e-mail y contraseña** y marca **«No cerrar sesión»** para que el proxy la renueve automáticamente.
+
+👉 **Consulta todos los detalles y su configuración específica en [docs/web-mode.md](docs/web-mode.md).**
 
 ---
 
@@ -189,7 +197,7 @@ Abre el panel web (`:5000`), pulsa **🔐 Abrir inicio de sesión**, entra con *
 
 ---
 
-## 🌐 Explorador Web (`:5050`)
+## 🗂️ Explorador Web (`:5050`)
 
 Desde la versión **`v2.7.0`**, el explorador web viene **activo por defecto** en **`http://IP_DE_TU_SERVIDOR:5050/`**, **aunque no tengas activada la galería virtual (`GALLERY_ENABLED=false`)**. Además de conectar clientes WebDAV (WinSCP, Rclone, Finder, Synology File Station, etc.), puedes gestionar directamente tus carpetas y archivos desde cualquier navegador:
 
@@ -268,18 +276,18 @@ Recuerda incluir `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` en tu `docker-compose
 
 ## 📚 Documentación Detallada
 
-* [🧩 Generador Web Interactivo (Compose, `docker run`, `.env`, Rclone, Synology y Duplicati)](https://uniextra.github.io/MovistarWebDAVProxy/)
-* [🔧 Configuración Avanzada, Seguridad, Proxies Inversos y Variables de Entorno](docs/configuration.md)
-* [🛡️ Configurar Synology HyperBackup, Duplicati y Rclone (>4 GB y Cifrado)](docs/backup-clients.md)
-* [💻 Mapear como Unidad de Red en Windows, macOS y Linux](docs/network-drive.md)
-* [🌐 Modo Web: sesión del navegador, renovación automática y subida web](docs/web-mode.md)
+* 🧩 [Generador Web Interactivo (Compose, `docker run`, `.env`, Rclone, Synology y Duplicati)](https://uniextra.github.io/MovistarWebDAVProxy/)
+* 🔧 [Configuración Avanzada, Seguridad, Proxies Inversos y Variables de Entorno](docs/configuration.md)
+* 🛡️ [Configurar Synology HyperBackup, Duplicati y Rclone (>4 GB y Cifrado)](docs/backup-clients.md)
+* 💻 [Mapear como Unidad de Red en Windows, macOS y Linux](docs/network-drive.md)
+* 🌐 [Modo Web: sesión del navegador, renovación automática y subida web](docs/web-mode.md)
 
 ---
 
 ## ⚖️ Aviso Legal y Marcas
 
-* [📋 Descargo de Responsabilidad (DISCLAIMER.md)](DISCLAIMER.md)
-* [🏷️ Política de Marcas Registradas (TRADEMARKS.md)](TRADEMARKS.md)
+* 📋 [Descargo de Responsabilidad (DISCLAIMER.md)](DISCLAIMER.md)
+* 🏷️ [Política de Marcas Registradas (TRADEMARKS.md)](TRADEMARKS.md)
 
 ---
 

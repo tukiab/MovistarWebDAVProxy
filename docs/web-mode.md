@@ -6,10 +6,28 @@ Por ahora es **solo para Movistar Cloud** (`micloud.movistar.es`); no está prob
 
 Úsalo si el emparejamiento por SMS del cliente de escritorio falla o CloudFront lo bloquea (`403`), o si prefieres que el tráfico sea idéntico al de la web. El modo normal no cambia y sigue siendo el recomendado si te funciona: su imagen ocupa ~20 MB; la del modo web, varios cientos de MB por Chromium.
 
-## Puesta en marcha
+---
+
+#### 📑 Índice de Contenidos
+
+1. 🚀 [Puesta en marcha](#-puesta-en-marcha)
+2. ⚙️ [Cómo funciona](#-cómo-funciona)
+3. 🔄 [Renovación automática de la sesión](#-renovación-automática-de-la-sesión) 
+4. 🗑️ [Papelera](#-papelera)
+5. 🛠️ [Opciones de la cuenta](#-opciones-de-la-cuenta)
+6. 📝 [Variables de entorno del modo web](#-variables-de-entorno-del-modo-web)
+7. 📤 [Subida web (multipart)](#-subida-web-multipart)
+8. 🌍 [Chromium](#-chromium)
+9. ☁️ [Uso con rclone (chunker + crypt)](#-uso-con-rclone-chunker--crypt)
+
+---
+
+## 🚀 Puesta en marcha
 
 > [!TIP]
 > **¿Prefieres generar el Compose y `.env` del Modo Web de forma visual?** Abre el **[Generador Web Interactivo (Modo Web preseleccionado)](https://uniextra.github.io/MovistarWebDAVProxy/#modo-web)** *(100 % local en tu navegador)*.
+
+Este modo utiliza un archivo Compose específico (**[docker-compose.web.yml](../docker-compose.web.yml)**) en lugar del docker-compose.yml estándar, ya que construye la imagen con Chromium integrado (Dockerfile.web). Revisa sus variables (credenciales, Telegram, etc.) antes de ejecutar:
 
 ```bash
 docker compose -f docker-compose.web.yml up -d --build
@@ -22,7 +40,9 @@ docker compose -f docker-compose.web.yml up -d --build
 
 La sesión se guarda en el volumen de `/app/tokens` (perfil de Chromium en `/app/tokens/webprofile`) y sobrevive a reinicios y actualizaciones.
 
-## Cómo funciona
+---
+
+## ⚙️ Cómo funciona
 
 | Operación | Cómo la hace el proxy |
 |---|---|
@@ -34,7 +54,7 @@ La sesión se guarda en el volumen de `/app/tokens` (perfil de Chromium en `/app
 | `COPY` de WebDAV | Copia en la nube (`/media/file?action=copy`), sin descargar ni volver a subir. Si no es posible, la copia normal |
 | Concurrencia | 2 subidas (`defaultConcurrentUploads` de la web) y 4 descargas simultáneas |
 
-## Renovación automática de la sesión
+## 🔄 Renovación automática de la sesión
 
 La sesión de la web (`JSESSIONID`) **caduca a las 24 h del inicio de sesión**, aunque haya actividad. Si se entró con **«No cerrar sesión»**, Movistar guarda además una cookie de larga duración (`PLC`, ~90 días) con la que la web vuelve a entrar sola.
 
@@ -42,21 +62,22 @@ El proxy aprovecha eso: una hora antes de la caducidad (`WEB_SESSION_RENEW_BEFOR
 
 El panel muestra cuándo caduca la sesión y si la renovación está activa. Si una renovación falla, se reintenta cada 10 minutos; la `PLC` nunca se borra por sí sola (solo al abrir a propósito `/web-login/`), así que un fallo pasajero de red o de Movistar no obliga a volver a entrar.
 
-### Volver a iniciar sesión sin cerrar la actual
+### 🔐 Volver a iniciar sesión sin cerrar la actual
 
 `/web-relogin/` abre un inicio de sesión en un contexto aislado del navegador, sin tocar la sesión en uso: las transferencias siguen mientras tanto. Al terminar (con «No cerrar sesión»), el proxy copia las cookies nuevas a la pestaña principal, recarga y comprueba con una llamada a SAPI que la sesión nueva funciona antes de darla por buena. Sirve para renovar la `PLC` o cambiar de cuenta sin cortar nada.
 
-> Si entras con el móvil y el SMS no hay `PLC`: la sesión durará 24 h y habrá que volver a entrar.
+> [!WARNING]
+> Si entras con el móvil y código SMS **no se genera la cookie PLC**, por lo que la sesión durará únicamente **24 horas** y tendrás que volver a iniciar sesión manualmente cada día. Para que se renueve sola (~90 días), inicia sesión siempre con **e-mail y contraseña** marcando **«No cerrar sesión»**.
 
-## Papelera
+## 🗑️ Papelera
 
 Todo lo que borra el proxy va a la papelera de Movistar Cloud, y la papelera cuenta para el límite de carpetas de la cuenta. Con `WEB_TRASH_EMPTY_EVERY=6h` el proxy la vacía periódicamente (`/media/trash?action=empty`, el botón de la web). Está **desactivado por defecto**: vaciarla borra para siempre todo lo que contenga. Actívalo si lo que se borra son sobre todo temporales (por ejemplo, los trozos del `chunker` de rclone).
 
-## Opciones de la cuenta
+## 🛠️ Opciones de la cuenta
 
 El panel muestra las opciones que la web lee al cargar (`/system/information`): tamaño máximo por archivo, límite de elementos por operación al borrar o mover carpetas (error `FOL-1036`) y caducidad automática de la papelera. En una cuenta de Movistar Cloud (noviembre de 2026) eran: 4096 MB por archivo, 1000 elementos por operación de carpeta y 86 400 min (60 días) en la papelera.
 
-## Variables de entorno del modo web
+## 📝 Variables de entorno del modo web
 
 | Variable | Por defecto | Descripción |
 |---|---|---|
@@ -70,9 +91,10 @@ El panel muestra las opciones que la web lee al cargar (`/system/information`): 
 | `SAPI_MAX_CONCURRENT` | `1` (en modo web, descargas + subidas + 2) | Llamadas simultáneas a SAPI. |
 | `DOWNLOAD_URL_MAX_AGE` | `1h` | Cuánto se reutiliza una URL de descarga firmada. |
 
-Las mejoras comunes a los dos modos (copia local de las subidas, cola, límite de ancho de banda, caché de archivos pequeños, ChaCha20, conexiones muertas, informe de copias y alertas de Telegram) están en [configuration.md](configuration.md).
+> [!NOTE]
+> **Variables y funciones comunes a ambos modos:** Además de estas variables propias del Modo Web, puedes configurar en tu [docker-compose.web.yml](../docker-compose.web.yml) el resto de opciones generales del proxy (credenciales `WEBDAV_*`/`WEBUI_*`, cifrado `TOKENS_ENCRYPTION_KEY`, alertas de Telegram, límite de ancho de banda, caché de archivos, ChaCha20, informe de copias, etc.). Consulta la tabla completa en **[Configuración Avanzada (configuration.md)](configuration.md#-1-tabla-completa-de-variables-de-entorno)**.
 
-## Subida web (multipart)
+## 📤 Subida web (multipart)
 
 El modo web sube como el formulario de la web: multipart contra `upload.*`, con las cookies de la sesión y sin reanudación. Es un protocolo distinto del de la app oficial del perfil `desktop` (`save-metadata` + `upload/file` con `Content-Length` y reanudación), y estas mejoras son propias de él:
 
@@ -82,13 +104,13 @@ El modo web sube como el formulario de la web: multipart contra `upload.*`, con 
 
 Si Movistar limita el tamaño por subida de la cuenta, el proxy lo avisa por Telegram con el límite detectado (ver [configuration.md](configuration.md)): baja el `chunk_size` del `chunker` de rclone en el cliente por debajo de él.
 
-## Chromium
+## 🌐 Chromium
 
-- Arranca en modo ahorrador (sin GPU ni extensiones) y con la caché en `/tmp` limitada; en `docker-compose.web.yml`, `/tmp` es un tmpfs con tope.
+- Arranca en modo ahorrador (sin GPU ni extensiones) y con la caché en `/tmp` limitada; en [`docker-compose.web.yml`](../docker-compose.web.yml), `/tmp` es un tmpfs con tope.
 - Se relanza de uno en uno: dos llamadas que lo encontraban caído a la vez arrancaban dos y el primero quedaba huérfano.
 - Las llamadas a SAPI desde la pestaña tienen plazo y no la bloquean.
 
-## Uso con rclone `chunker` + `crypt`
+## 📦 Uso con rclone `chunker` + `crypt`
 
 Configuración probada con varios TB de datos:
 
