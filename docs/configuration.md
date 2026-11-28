@@ -1,18 +1,44 @@
 # Configuración Avanzada, Seguridad y Red 🔧🔒
 
-Esta guía reúne toda la referencia técnica de Movistar / O2 Cloud WebDAV proxy: variables de entorno completas, alertas de Telegram, arquitectura de autenticación y seguridad, configuración de proxies inversos (Nginx/NPM/Traefik/Synology DSM), red Docker, filtro de basura del SO y limitaciones técnicas de la API de Movistar / O2 Cloud.
+Esta guía reúne toda la referencia técnica de **Movistar / O2 Cloud WebDAV Proxy**: variables de entorno completas, alertas de Telegram, arquitectura de autenticación y seguridad, configuración de proxies inversos (Nginx/NPM/Traefik/Synology DSM), red Docker, filtro de basura del SO y limitaciones técnicas de la API de Movistar / O2 Cloud.
 
 > [!TIP]
-> **¿Prefieres configurarlo sin editar YAML a mano?** Usa el **[Generador Web Interactivo](https://uniextra.github.io/MovistarWebDAVProxy/)** para elegir tus variables y descargar tu `docker-compose.yml`, `docker run` o `.env` listo para usar *(100 % local en tu navegador)*.
+> **¿Prefieres configurarlo sin editar YAML a mano?** Usa el **[Generador Web Interactivo](https://uniextra.github.io/MovistarWebDAVProxy/)** para elegir tus variables y descargar tu [`docker-compose.yml`](../docker-compose.yml), `docker run` o `.env` listo para usar *(100 % local en tu navegador)*.
+
+---
+
+#### 📑 Índice de Contenidos
+
+1. 📋 [Tabla Completa de Variables de Entorno](#-1-tabla-completa-de-variables-de-entorno) 
+  * 🔐 [Autenticación y Acceso](#-autenticación-y-acceso)
+  * 🚪 [Puertos, Rutas y Almacenamiento](#-puertos-rutas-y-almacenamiento)
+  * 🖼️ [Galería Virtual (WebDAV)](#-galería-virtual-webdav)
+  * 🔔 [Notificaciones de Telegram](#-notificaciones-de-telegram)
+  * ⚡ [Rendimiento, Concurrencia y Red](#-rendimiento-concurrencia-y-red)
+  * 🕵️ [Huella TLS, User-Agent y Modo Web](#-huella-tls-user-agent-y-modo-web)
+2. 🔔 [Sistema de Alertas por Telegram](#-2-sistema-de-alertas-por-telegram)
+3. 🔍 [Diagnóstico de User-Agent en los Logs](#-3-diagnóstico-de-user-agent-en-los-logs)
+4. 🖥️ [Perfil de cliente de escritorio](#-4-perfil-de-cliente-de-escritorio)
+  * 💬 [Hablar como el cliente oficial](#-hablar-como-el-cliente-oficial)
+  * 🔤 [Nombres que O2 no admite](#-nombres-que-o2-no-admite)
+  * 📄 [Archivos vacíos](#-archivos-vacíos)
+  * 🚫 [Archivos que O2 no admite (MED-1050)](#-archivos-que-o2-no-admite-med-1050)
+5. 🔒 [Seguridad y Autenticación Detallada](#-5-seguridad-y-autenticación-detallada)
+6. 📡 [Topologías de Red Docker y Proxies Inversos](#-6-topologías-de-red-docker-y-proxies-inversos)
+  * 🗄️ [Ejemplo: Configuración en Synology DSM 7 (HTTPS)](#-ejemplo-configuración-en-synology-dsm-7-https) 
+  * 🛡️ [Resolución DNS Local y Protección DNS Rebinding](#resolución-dns-local-y-protección-dns-rebinding)
+7. 🧹 [Filtro Inteligente de Basura del SO (*DevNull Absorber*)](#-7-filtro-inteligente-de-basura-del-so-devnull-absorber)
+8. ⚠️ [Limitaciones Técnicas de Movistar / O2 Cloud (SAPI)](#-8-limitaciones-técnicas-de-movistar--o2-cloud-sapi)
+9. 🔌 [Conexiones e informe de copias](#-9-conexiones-e-informe-de-copias)
 
 ---
 
 ## 📋 1. Tabla Completa de Variables de Entorno
 
 > [!NOTE]
-> **Perfiles y modos de autenticación:**
-> * **Perfil `desktop` (por defecto):** Emula el cliente oficial de escritorio de Windows. Se vincula mediante **emparejamiento por SMS (OAuth2)** desde el panel web (`:5000`) y es el modo recomendado para uso estándar.
-> * **Perfil `browser` o [Modo Web](web-mode.md) (`WEB_SESSION=true`):** Emula un navegador Chrome e inicia sesión mediante el portal web de Movistar/O2 Cloud (requiere la imagen `Dockerfile.web` con Chromium integrado). - **Perfil `browser` o Modo Web (`WEB_SESSION=true`):** Emula un navegador Chrome e inicia sesión mediante el portal web de Movistar/O2 Cloud (requiere la imagen `Dockerfile.web` con Chromium integrado). Consulta sus variables específicas en la [Guía del Modo Web](web-mode.md).
+> **Perfiles y modos de autenticación:** La mayoría de las variables de esta tabla son comunes a ambos modos, salvo las específicas que se indican aquí y en la guía del Modo Web:
+> * 🖥️ **Perfil `desktop` (por defecto):** Emula el cliente oficial de escritorio de Windows (`SAPI_CLIENT_PROFILE=desktop`). Se vincula mediante **emparejamiento por SMS (OAuth2)** desde el panel web (`:5000`) y es el modo recomendado para uso estándar.
+> * 🌐 **Perfil `browser` o [Modo Web](web-mode.md) (`WEB_SESSION=true`):** Emula un navegador Chrome e inicia sesión mediante el portal web de Movistar/O2 Cloud (requiere la imagen `Dockerfile.web` con Chromium integrado). Consulta sus variables específicas en la [Guía del Modo Web](web-mode.md).
 
 ### 🔐 Autenticación y Acceso
 
@@ -32,7 +58,7 @@ Esta guía reúne toda la referencia técnica de Movistar / O2 Cloud WebDAV prox
 
 | Variable | Por defecto | Descripción |
 | :--- | :--- | :--- |
-| `PORT` | `5000` | Puerto interno del servidor del Panel Web. |
+| `PORT` | `5000` | Puerto interno del servidor del Panel Web. *(Nota: Los NAS de Synology utilizan el puerto `5000` TCP por defecto para el acceso web HTTP a DSM; si usas Synology, revisa que no esté en uso: en modo bridge (`network_mode: bridge`) basta con mapear otro puerto externo en [Docker](../README.md#opción-1-docker-compose-recomendado), ej. `5005:5000`; si usas `network_mode: host`, cambia esta variable ej. `PORT=5005`).* |
 | `WEBUI_URL` | *(vacío)* | URL pública o de red local del Panel WebUI (ej. `https://panelproxywebdav.midominio.com`, `https://192-168-0-2.tuquickconnect.direct.quickconnect.to:5500/`, `https://proxywebdav-panel.subdominioddns.synology.me`). **Solo necesaria si usas proxy inverso** o dominio propio/DDNS; en acceso local no hace falta configurarla. Recuerda no exponer directamente a Internet dicho acceso. |
 | `WEBDAV_HOST_PORT` | `5050` | Puerto público de WebDAV mostrado en el panel; en Docker Compose toma el valor de `WEBDAV_PORT`. |
 | `WEBDAV_URL` | *(vacío)* | URL del servidor WebDAV. **Solo necesaria si usas proxy inverso**, para que el botón **Explorador** del panel apunte a la dirección correcta; en red local se calcula automáticamente. |
@@ -55,15 +81,15 @@ Esta guía reúne toda la referencia técnica de Movistar / O2 Cloud WebDAV prox
 > [!WARNING]
 > Si activas `GALLERY_ENABLED=true` y ejecutas `rclone sync <local> remoto:` contra la raíz `/`, añade `--exclude "/_gallery/**"` (o el nombre de `GALLERY_DIR`) para evitar que `rclone` intente borrar la carpeta virtual de destino.
 
-### 🔔 Notificaciones de Telegram 🤖 (PR #53)
+### 🔔 Notificaciones de Telegram
 
 | Variable | Por defecto | Descripción |
 | :--- | :--- | :--- |
-| `TELEGRAM_BOT_TOKEN` | *(vacío)* | Token del bot de Telegram para alertas operativas y de sesión. |
+| `TELEGRAM_BOT_TOKEN` | *(vacío)* | 🤖 Token del bot de Telegram para alertas operativas y de sesión. |
 | `TELEGRAM_CHAT_ID` | *(vacío)* | Identificador del chat o canal de Telegram que recibirá las alertas. |
 
 > [!TIP]
-> **Funcionamiento desde el segundo cero:** Desde la versión **v2.5.6** (PR #53), el notificador de Telegram es global y funciona enviando alertas desde que arranca el contenedor. Si lo configuras  únicamente desde el panel web, **no recibirás avisos de arranque ni otras alertas como cuenta sin vincular** hasta que inicies sesión. Por ello se recomienda definir `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` directamente en las variables de entorno de Docker (incluido para recibir el aviso de sesión pendiente). Si además guardas credenciales desde el panel web en `/app/tokens`, estas actualizan las activas mientras la cuenta esté vinculada y vuelven automáticamente a las variables de Docker si la desvinculas.
+> **Funcionamiento desde el segundo cero:** Desde la versión **v2.5.6** (PR #53), el notificador de Telegram es global y funciona enviando alertas desde que arranca el contenedor. Si lo configuras  únicamente desde el panel web, **no recibirás avisos de arranque ni otras alertas como cuenta sin vincular** hasta que inicies sesión. Por ello se recomienda definir `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` directamente en las variables de entorno de [Docker](../README.md#opción-1-docker-compose-recomendado) (incluido para recibir el aviso de sesión pendiente). Si además guardas credenciales desde el panel web en `/app/tokens`, estas actualizan las activas mientras la cuenta esté vinculada y vuelven automáticamente a las variables de Docker si la desvinculas.
 > Ver la [sección 2: Sistema de Alertas por Telegram](#-2-sistema-de-alertas-por-telegram) que enumera las principales.
 
 
@@ -107,7 +133,12 @@ Esta guía reúne toda la referencia técnica de Movistar / O2 Cloud WebDAV prox
 
 ## 🔔 2. Sistema de Alertas por Telegram
 
-Con `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` configurados en tu `docker-compose.yml` (o desde el panel web), el proxy envía notificaciones automáticas ante los siguientes eventos:
+Con `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` configurados en tu [`docker-compose.yml`](../docker-compose.yml), el proxy envía notificaciones automáticas sobre el estado del servicio y tus copias. 
+
+[!TIP]
+**¿Por qué conviene definir estas variables en [Docker](../README.md#opción-1-docker-compose-recomendado)?** Si no añades `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` en tu `docker-compose.yml` (o docker run), las notificaciones **no estarán activas desde el arranque** y tendrás que entrar manualmente al panel web (`:5000`) e iniciar sesión previamente para configurarlas. Al guardarlas como variables de entorno en Docker, el sistema de alertas funciona de forma autónoma desde el segundo cero (incluso si el contenedor arranca sin sesión vinculada o sufre un fallo crítico al iniciar). 
+
+En concreto, el sistema avisa ante los siguientes eventos:
 
 * 🚀 **Arranque del servicio:** Confirma que el contenedor ha iniciado y muestra los puertos de escucha de WebDAV y Panel Web.
 * ⚠️ **Cuenta no vinculada o sesión web pendiente:** Si arranca sin tokens guardados (o en Modo Web sin sesión iniciada), avisa inmediatamente para que accedas al panel y completes el inicio de sesión.
@@ -154,7 +185,7 @@ CloudFront exige esa coherencia: un `X-deviceid` `fol-…` llega a SAPI con `Use
 La huella TLS también cuenta: con la de Chrome (`chrome_auto`) y el `User-Agent` del cliente de Windows, CloudFront acabó devolviendo esos `401` vacíos a todas las peticiones tras unas 11 horas de funcionamiento normal, mientras que con las mismas credenciales y la huella `golang` la sesión se renovó sin problemas. Con `o2` el proxy presenta la misma huella que la aplicación oficial.
 
 
-### Hablar como el cliente oficial
+### 💬 Hablar como el cliente oficial
 
 Además de presentarse como la app, en el perfil `desktop` el proxy **hace las cosas como la app**: sube en dos pasos (`save-metadata` y el contenido en bruto), reanuda las subidas cortadas, renombra, mueve, crea y borra con las mismas peticiones, late con la misma cadencia, relee cada archivo subido y sigue su validación.
 
@@ -192,15 +223,15 @@ Todas estas opciones se leen en `internal/config/opciones.go`. Las marcadas con 
 
 Los valores en segundos admiten decimales (`0.5`). Un valor vacío o no válido usa el de por defecto.
 
-### **Nombres que O2 no admite.**
+### 🔤 **Nombres que O2 no admite.**
 
 O2 rechaza los archivos cuyo nombre empieza por punto (`.env`, `.gitignore`), los que terminan en `.tmp` (en mayúsculas o minúsculas) y quita el punto final de los que terminan en punto. Para poder guardarlos, el proxy escribe ese punto como `%2E` en la nube y lo vuelve a poner al leer: `.env` se guarda como `%2Eenv`, `x.tmp` como `x%2Etmp` y `x.` como `x%2E`. Por WebDAV se ven con su nombre real; en la web o la app de O2, con `%2E`. Las carpetas no lo necesitan. Un archivo subido por otra vía con `%2E` en esas posiciones se verá con el punto. Las sondas de Duplicati (`duplicati-*.tmp`) y los archivos de sistema (`.DS_Store`, `desktop.ini`) se siguen absorbiendo sin subirlos.
 
-### **Archivos vacíos.**
+### 📄 **Archivos vacíos.**
 
 O2 guarda archivos de 0 bytes como cualquier otro (registro con tamaño 0 y envío vacío); la app oficial no los sube porque los ignora, no porque O2 no los admita. Por eso el proxy los sube de verdad (`WEBDAV_REAL_EMPTY_FILES`): están en la nube y una copia que los usa (Hyper Backup guarda en ellos el estado de la copia) se puede recuperar desde otro equipo y otro proxy sin depender de nada local. Los vacíos de bloqueo de Hyper Backup (`lock_*`, `@reader`…), que viven segundos, siguen solo en el proxy. Al arrancar, los vacíos que seguían emulados (de una versión anterior o del manifiesto) se suben una vez; el manifiesto queda solo con los que no se hayan podido subir. Si en `Control/@writer` falta el archivo de estado de Hyper Backup (`v1.N.-1.0.0.none.none.cinfo`), el proxy lo repone con la versión de `Config/version_info.db.N` (antes ponía siempre `v1.1`, y Hyper Backup respondía «The backup data on the cloud is older than the NAS's cache»); si solo hay un `v1.1` puesto así por una versión anterior y `Config` dice otra cosa, añade el correcto.
 
-### Archivos que O2 no admite (`MED-1050`)
+### 🚫 Archivos que O2 no admite (`MED-1050`)
 
 O2 comprueba que el contenido de las imágenes (`jpg`, `png`, `heic`…) corresponda a su extensión; el de los audios y vídeos no lo comprueba (un `.mp3` o un `.mp4` cualquiera se guarda tal cual). Si una imagen no corresponde, rechaza el archivo. Con un `.heic` dañado O2 no responde `MED-1050` sino `MED-1000`, el mismo código que da cuando falla toda la API; por eso el proxy lo reintenta una vez y, si se repite, lo trata igual. Los `.heif` se suben como archivo genérico, porque O2 no los admite como imagen ni siquiera con una foto real. La app oficial lo marca como no admitido y no lo reintenta; el proxy hace lo mismo y responde **`415 Unsupported Media Type`** (sin `Retry-After`), para que el cliente lo señale y siga con lo demás en vez de reintentarlo sin fin. Con `SAPI_UNSUPPORTED_AS_FILE=true` se sube como archivo genérico.
 
@@ -225,7 +256,7 @@ O2 comprueba que el contenido de las imágenes (`jpg`, `png`, `heic`…) corresp
 
 ---
 
-## 🌐 6. Topologías de Red Docker y Proxies Inversos
+## 📡 6. Topologías de Red Docker y Proxies Inversos
 
 * **No exponer directamente a Internet:** Si necesitas acceder desde fuera de tu red local, coloca siempre un proxy inverso con **TLS/HTTPS** delante (Caddy, Nginx, Traefik) o utiliza un túnel VPN (WireGuard / Tailscale).
 * **Docker Bridge (por defecto):** Mediante `BRUTE_FORCE_EXCLUDED_IPS` (`127.0.0.1,::1,172.16.0.0/12`), el loopback y las subredes puente estándar de Docker (`172.17.0.0/16`, `172.18.0.0/16`, etc.) quedan exentas del bloqueo por fuerza bruta (`HTTP 429`). Esto evita que varios clientes compartiendo el gateway de Docker queden bloqueados accidentalmente. **La autenticación Basic Auth se exige y valida en todo momento; la exclusión nunca elude la contraseña.**
@@ -241,7 +272,7 @@ O2 comprueba que el contenido de las imágenes (`jpg`, `png`, `heic`…) corresp
   * **Nota para clientes Linux GVFS (Thunar / Nautilus `davs://`):** `gvfsd-dav` / `libsoup` presenta una limitación histórica de entero con signo de 32 bits (**2 GiB**) por archivo; para subir archivos de entre 2 GB y 4 GB desde Linux utiliza **Rclone** o `curl`.
 * **Docker Host (`network_mode: host`):** En Linux nativo permite observar la IP real directa del socket. En Docker Desktop (Windows/macOS), debido a la máquina virtual interna, la topología recomendada es el modo bridge con mapeo de puertos o proxy inverso.
 
-### Ejemplo: Configuración en Synology DSM 7 (HTTPS)
+### 🗄️ Ejemplo: Configuración en Synology DSM 7 (HTTPS)
 
 Si tienes un NAS Synology, dispones de un **[proxy inverso integrado](https://kb.synology.com/en-global/DSM/help/DSM/AdminCenter/system_login_portal_advanced?version=7)** así como opciones para generar y utilizar [certificados SSL](https://kb.synology.com/es-es/DSM/help/DSM/AdminCenter/connection_certificate?version=7) válidos.
 
@@ -252,9 +283,9 @@ Para lograrlo en **DSM 7** necesitas un dominio con certificado SSL, para lo cua
 * **Dominio automático de [QuickConnect](https://kb.synology.com/es-es/DSM/help/DSM/AdminCenter/connection_quickconnect?version=7) (`*.tuQuickConnectID.direct.quickconnect.to`):** Si quieres usar HTTPS válido **únicamente dentro de tu red local** (sin abrir puertos ni configurar un DDNS externo), puedes aprovechar el certificado que genera QuickConnect para el subdominio con la IP local de tu NAS con guiones (ej. `192-168-1-2.tuQuickConnectID.direct.quickconnect.to`, que resuelve directamente a `192.168.1.2`). Como no permite crear subdominios personalizados adicionales sobre él, debes usar **dos puertos distintos sin uso** en el origen de cada regla (por ejemplo, `8443` para el Panel Web y `8444` para WebDAV), ya que Synology no permite repetir la misma combinación de host y puerto. **No cambiar los puertos internos del contenedor (`PORT` ni `WEBDAV_HOST_PORT`)**, ya que el proxy inverso de Synology redirige esos puertos hacia los internos por defecto (`5000` y `5050`).
 
 
-#### Pasos de configuración del proxy inverso
+#### ⚙️ Pasos de configuración del proxy inverso
 
-1. **Configuración YAML del proyecto del contenedor** en `docker-compose.yml`:
+1. **Configuración YAML del proyecto del contenedor** en [`docker-compose.yml`](../docker-compose.yml):
    En la configuración YAML de tu proyecto en **Container Manager**, revisa que tengas añadidas las variables de URL pública (`WEBUI_URL` y, opcionalmente, `WEBDAV_URL`, incluyendo el puerto si usas `direct.quickconnect.to`) y que `TRUSTED_PROXIES` incluya la IP o subred de la red *bridge* del contenedor para que el sistema de protección contra fuerza bruta (rate-limiting) lea la IP real del cliente mediante `X-Forwarded-For` y no bloquee por error la IP interna de Docker, ya que el tráfico llegará al contenedor a través del proxy inverso.
    ```yaml
    environment:
@@ -285,26 +316,24 @@ Para lograrlo en **DSM 7** necesitas un dominio con certificado SSL, para lo cua
      * *Nota:* Esta regla es útil si quieres acceder al **Explorador Web** o montar WebDAV desde fuera de tu red local. **Si solo vas a usar Hyper Backup en el propio NAS**, no necesitas crear esta regla ni configurar `WEBDAV_URL` con dominio externo: conéctalo directamente en local por HTTP (`http://localhost:5050` o la IP interna del contenedor).
 
 
-#### Resolución DNS Local y Protección DNS Rebinding
+### 🛡️ Resolución DNS Local y Protección DNS Rebinding
 
 Para utilizar HTTPS en la red local mediante un dominio sin exponer el NAS a Internet, es necesario que el dominio resuelva a la IP privada del NAS dentro de la LAN (por ejemplo, `192.168.1.2`).
 
 > [!WARNING]
 > Mantén los **puertos cerrados** en tu router. No configures ningún reenvío de puertos (*Port Forwarding*) hacia el NAS, salvo que tengas los conocimientos técnicos necesarios y sepas exactamente lo que estás haciendo. Así garantizas que nadie desde fuera pueda entrar por error.
 
-#### Posible bloqueo por *DNS Rebind Protection*
+#### 🚧 Posible bloqueo por *DNS Rebind Protection*
 
 Muchos routers (como Fritz!Box, pfSense, OPNsense o Asuswrt-Merlin) y servidores DNS filtradores (como Pi-hole, AdGuard Home o Unbound) incluyen por defecto una medida de seguridad llamada **DNS Rebind Protection**.
 
 * **¿Qué hace?** Bloquea cualquier consulta DNS pública que devuelva como resultado una dirección IP privada (`192.168.x.x`, `10.x.x.x`, `172.16.x.x`) para prevenir ataques de *DNS Rebinding*.
 * **Síntoma:** Al intentar acceder desde la red local, el navegador no carga la página o devuelve un error de resolución DNS (`NXDOMAIN` o `SERVFAIL`).
 
-#### Soluciones recomendadas
+#### 💡 Soluciones recomendadas
 
 1. **Usar Split DNS (DNS dividido / DNS de horizonte):** Configura un registro `A` local en tu servidor DNS interno (paquete *DNS Server* de Synology, Pi-hole, AdGuard Home) o en el archivo `hosts` del equipo cliente apuntando tu dominio DDNS directamente a la IP local del NAS. De este modo, la consulta se resuelve en la LAN sin salir al exterior. También lo puedes hacer en servicios como NextDNS o Control D a través de reglas de *reescritura o Conditional Forwarding*.
 2. **Añadir excepción en el router/firewall:** Si utilizas el router como servidor DNS principal y bloquea la resolución interna, añade tu dominio (`tudominio.synology.me`) a la lista blanca (*Rebind Protection Whitelist* / *Private Domain*) en los ajustes de red o DNS del router.
-
-
 
 ---
 

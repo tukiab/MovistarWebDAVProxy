@@ -2,13 +2,35 @@
 
 Esta guía detalla paso a paso cómo montar tu almacenamiento de Movistar u O2 Cloud como un disco local o unidad de red en **Windows**, **macOS**, **Linux** y **Synology DSM (File Station)** a través del proxy WebDAV.
 
-> [!NOTE]
+*(Puedes ver la estructura completa del documento y las notas iniciales sobre el limpiador de archivos basura y la sensibilidad de mayúsculas/minúsculas en la documentación de referencia [configuración](configuration.md)).*
+
+> [!TIP]
 > A partir de la versión **v2.0.5**, el proxy incorpora un sistema de absorción silenciosa de archivos basura (*DevNull Absorber*). Puedes navegar, crear y mover archivos sin preocuparte de que metadatos como `desktop.ini`, `.DS_Store`, `thumbs.db` o carpetas de papelera se suban a tu nube.
 
 ---
 
-> [!NOTE]
+> [!IMPORTANT]
 > **Mayúsculas y minúsculas:** O2 Cloud distingue `Foto.jpg` de `foto.jpg`, y con O2 el proxy también: busca los nombres exactos. El Explorador de Windows, el Finder de macOS y otros clientes que no distinguen mayúsculas pueden pedir un archivo con otras mayúsculas y no encontrarlo. Si montas la nube con el cliente nativo de Windows o de macOS, puedes activar `WEBDAV_CASE_INSENSITIVE=true`: si no hay un archivo con el nombre exacto, se usa el que solo difiere en mayúsculas. No lo actives si usas también rclone, restic o Hyper Backup contra el mismo proxy (ver [configuración](configuration.md)).
+
+---
+
+## 📑 Índice de Contenidos
+
+1. 🪟 [Windows](#-1-windows) 
+  * [Método 1: Montaje de Alto Rendimiento con Rclone + WinFsp (Recomendado en Windows)](#-método-11-montaje-de-alto-rendimiento-con-rclone--winfsp-recomendado-en-windows)
+  * [Método 2: Montaje Nativo de Windows (Experimental / No Soportado Oficialmente)](#método-12-montaje-nativo-de-windows-experimental--no-soportado-oficialmente)
+  * [Método 3: Montaje Rápido Temporal (Solo sesión activa)](#método-13-montaje-rápido-temporal-solo-sesión-activa)
+2. 🍏 [macOS](#-2-macos) 
+  * [Método 1: Finder (Gráfico)](#método-21-finder-gráfico)
+  * [Método 2: Terminal de macOS](#método-22-terminal-de-macos)
+3. 🐧 [Linux](#-3-linux) 
+  * [Método 1: Entorno Gráfico (GNOME Nautilus / KDE Dolphin)](#método-31-entorno-gráfico-gnome-nautilus--kde-dolphin)
+  * [Método 2: Montaje persistente en el sistema con davfs2](#método-32-montaje-persistente-en-el-sistema-con-davfs2)
+  * [Método 3: Montaje con Rclone en Linux (Recomendado para servidores)](#método-33-montaje-con-rclone-en-linux-recomendado-para-servidores)
+4. 🗄️ [Synology DSM (File Station)](#-4-synology-dsm-file-station)
+5. 🧹 [Protección Automática contra Archivos Basura](#-protección-automática-contra-archivos-basura)
+
+---
 
 ## 🪟 1. Windows
 
@@ -23,7 +45,7 @@ Esta guía detalla paso a paso cómo montar tu almacenamiento de Movistar u O2 C
 
 ---
 
-### Método 1: Montaje de Alto Rendimiento con Rclone + WinFsp (Recomendado en Windows)
+### Método 1.1: Montaje de Alto Rendimiento con Rclone + WinFsp (Recomendado en Windows)
 
 Esta solución proporciona una experiencia de disco local 100% nativa, rápida y sin los bloqueos ni bugs de `WebClient`:
 
@@ -31,8 +53,8 @@ Esta solución proporciona una experiencia de disco local 100% nativa, rápida y
 2. Configura el remoto ejecutando `rclone config` (tipo `webdav`):
    * **URL:** `http://TU_IP_SERVIDOR:5050`
    * **Vendor:** `other`
-   * **User:** tu usuario WebDAV
-   * **Pass:** tu contraseña WebDAV
+   * **User:** tu usuario configurado en `WEBDAV_USER`
+   * **Pass:** tu contraseña configurada en `WEBDAV_PASSWORD`
 3. Monta la unidad como disco local con streaming y caché transparente:
    ```powershell
    rclone mount movistar: M: --vfs-cache-mode full --vfs-cache-max-size 20G
@@ -40,7 +62,7 @@ Esta solución proporciona una experiencia de disco local 100% nativa, rápida y
 
 ---
 
-### Método 2: Montaje Nativo de Windows (Experimental / No Soportado Oficialmente)
+### Método 1.2: Montaje Nativo de Windows (Experimental / No Soportado Oficialmente)
 
 Si deseas utilizar el cliente nativo de Windows a pesar de sus limitaciones, este procedimiento automatiza el montaje mediante script al inicio de sesión mitigando parte de los fallos de `WebClient`:
 
@@ -98,20 +120,20 @@ for ($i = 1; $i -le 20; $i++) {
 
 ---
 
-### Método 3: Montaje Rápido Temporal (Solo sesión activa)
+### Método 1.3: Montaje Rápido Temporal (Solo sesión activa)
 ```powershell
 net use M: http://TU_IP_SERVIDOR:5050 /user:TU_USUARIO TU_PASSWORD /persistent:no
 ```
 
 > [!WARNING]
 > **Límite de 4 GB por archivo en Movistar / O2 Cloud:**  
-> La API de Telefónica no admite archivos individuales mayores a 4 GB (4096 MB). Si necesitas almacenar archivos gigantes (por ejemplo imágenes ISO de más de 4 GB), puedes configurar un remoto secundario tipo [`chunker`](https://rclone.org/chunker/) sobre tu remoto `movistar:` para fragmentarlos de forma transparente. Usa la [configuración recomendada de Rclone](backup-clients.md#-configuración-avanzada-archivos-de-más-de-4-gb-chunker-y-cifrado-crypt) (`name_format = *-chunk###` y `transactions = norename`): con la de por defecto, cada trozo se renombra cambiando de extensión y el proxy tiene que volver a subirlo entero.
+> La API de Telefónica no admite archivos individuales mayores a **4 GB** (4096 MB). Si necesitas almacenar archivos gigantes (por ejemplo imágenes ISO de más de 4 GB), puedes configurar un remoto secundario tipo [`chunker`](https://rclone.org/chunker/) sobre tu remoto `movistar:` para fragmentarlos de forma transparente. Usa la [configuración recomendada de Rclone](backup-clients.md#-configuración-avanzada-archivos-de-más-de-4-gb-chunker-y-cifrado-crypt) (`name_format = *-chunk###` y `transactions = norename`): con la de por defecto, cada trozo se renombra cambiando de extensión y el proxy tiene que volver a subirlo entero.
 
 ---
 
 ## 🍏 2. macOS
 
-### Método 1: Finder (Gráfico)
+### Método 2.1: Finder (Gráfico)
 
 1. En el escritorio de macOS o en Finder, pulsa las teclas **`Cmd (⌘) + K`** (o en la barra de menú: *Ir > Conectarse al servidor...*).
 2. En la casilla **Dirección del servidor**, introduce:
@@ -127,7 +149,7 @@ net use M: http://TU_IP_SERVIDOR:5050 /user:TU_USUARIO TU_PASSWORD /persistent:n
 
 ---
 
-### Método 2: Terminal de macOS
+### Método 2.2: Terminal de macOS
 
 Para montar la unidad en una carpeta del sistema por línea de comandos:
 
@@ -148,7 +170,7 @@ umount ~/Desktop/MovistarCloud
 
 ## 🐧 3. Linux
 
-### Método 1: Entorno Gráfico (GNOME Nautilus / KDE Dolphin)
+### Método 3.1: Entorno Gráfico (GNOME Nautilus / KDE Dolphin)
 
 #### En GNOME Files (Nautilus):
 1. Abre el explorador de archivos y haz clic en **Otras ubicaciones** en la barra lateral.
@@ -168,7 +190,7 @@ umount ~/Desktop/MovistarCloud
 
 ---
 
-### Método 2: Montaje persistente en el sistema con `davfs2`
+### Método 3.2: Montaje persistente en el sistema con `davfs2`
 
 1. Instala el paquete `davfs2`:
    ```bash
@@ -205,7 +227,7 @@ umount ~/Desktop/MovistarCloud
 
 ---
 
-### Método 3: Montaje con Rclone en Linux (Recomendado para servidores)
+### Método 3.3: Montaje con Rclone en Linux (Recomendado para servidores)
 
 ```bash
 rclone mount movistar: /mnt/movistar_cloud \
@@ -226,7 +248,9 @@ Si ejecutas el proxy en tu NAS Synology (o en otro equipo de la red), puedes exp
 3. Selecciona **WebDAV**.
 4. Introduce estos datos (configuración orientativa para tu contenedor actual):
 
-![Conexión remota WebDAV en Synology File Station](images/dsm-file-station-webdav.png)
+![Configuración de conexión remota WebDAV en Synology File Station](images/dsm-file-station-webdav.png "Captura de pantalla de conexión remota WebDAV en Synology File Station")
+*Captura de pantalla de la configuración de conexión remota WebDAV en Synology DSM File Station.*
+
 
 | Campo | Valor |
 | :--- | :--- |
