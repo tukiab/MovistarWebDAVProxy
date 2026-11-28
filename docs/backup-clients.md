@@ -9,7 +9,7 @@ Esta guía detalla la configuración óptima para realizar copias de seguridad a
 1. 🗄️ [Synology HyperBackup](#-1-synology-hyperbackup)
 2. 📦 [Duplicati](#-2-duplicati)
 3. ☁️ [Rclone (Sync y Backup)](#-3-rclone-sync-y-backup)
- * 🔏 [Configuración avanzada: archivos de más de 4 GB (`chunker`) y cifrado (`crypt`)](#-configuración-avanzada-archivos-de-más-de-4-gb-chunker-y-cifrado-crypt)
+   * 🔏 [Configuración avanzada: archivos de más de 4 GB (`chunker`) y cifrado (`crypt`)](#-configuración-avanzada-archivos-de-más-de-4-gb-chunker-y-cifrado-crypt)
 
 ---
 
