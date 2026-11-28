@@ -14,44 +14,49 @@
 
 Proxy WebDAV nativo de alto rendimiento escrito en **Go** que traduce peticiones estándar WebDAV (**Synology HyperBackup**, **Duplicati**, **Rclone**, unidades de red en **Windows / macOS / Linux**) para conectar directamente con **Movistar Cloud España** y **O2 Cloud** de forma local y en tiempo real.
 
+En la práctica, **convierte tu nube de Movistar u O2 en un disco duro en red accesible bajo demanda**: a diferencia del cliente oficial de escritorio (que no tiene versión para Linux y obliga a sincronizar archivos en el equipo), este proxy te permite navegar por tus carpetas o programar copias de seguridad automáticas desde tu NAS o PC **sin tener que descargar todo el contenido ni consumir espacio en tu disco duro local**, funcionando además en **Linux, macOS, Windows, NAS y servidores sin interfaz gráfica** (como una Raspberry Pi).
+
 <p align="center">
-  <img src="screenshot.png" alt="Movistar & O2 Cloud WebDAV Proxy Web Dashboard" width="850">
+  <img src="screenshot.png" alt="Movistar & O2 Cloud WebDAV Proxy Web Dashboard" title="Captura de pantalla del Panel Web de Gestión puerto (:5000)" width="850">
+  <br>
+  <em>Captura de pantalla del Panel Web de Gestión de Movistar & O2 Cloud WebDAV Proxy en el puerto <code>:5000</code>.</em>
 </p>
 
 ---
 
 ## 📑 Índice de Contenidos
 
-1. [🌟 Características Principales](#-características-principales)
-2. [🐳 Paso 1: Despliegue con Docker](#-paso-1-despliegue-con-docker)
-3. [🔑 Paso 2: Vinculación Inicial de la Cuenta](#-paso-2-vinculación-inicial-de-la-cuenta)
-4. [🔌 Paso 3: Conectar Clientes y Unidades de Red](#-paso-3-conectar-clientes-y-unidades-de-red)
-5. [🌐 Explorador Web (`:5050`)](#-explorador-web-5050)
-6. [🖼️ Galería Virtual (`/_gallery`) — Opcional](#️-galería-virtual-_gallery--opcional)
-7. [⚙️ Variables de Entorno Principales y Alertas de Telegram](#️-variables-de-entorno-principales-y-alertas-de-telegram)
-8. [⚠️ Aspectos Clave a Tener en Cuenta](#️-aspectos-clave-a-tener-en-cuenta)
-9. [📚 Documentación Detallada](#-documentación-detallada)
-10. [⚖️ Aviso Legal y Marcas](#️-aviso-legal-y-marcas)
-11. [📄 Licencia](#-licencia)
+1. 🌟 [Características Principales](#-características-principales)
+2. 🐳 [Paso 1: Despliegue con Docker](#-paso-1-despliegue-con-docker)
+3. 🔑 [Paso 2: Vinculación Inicial de la Cuenta](#-paso-2-vinculación-inicial-de-la-cuenta)
+4. 🔌 [Paso 3: Conectar Clientes y Unidades de Red](#-paso-3-conectar-clientes-y-unidades-de-red)
+5. 🌐 [Explorador Web](#-explorador-web-5050)
+6. 🖼️ [Galería Virtual](#️-galería-virtuay--opcional)
+7. ⚙️ [Variables de Entorno Principales](#️-variables-de-entorno-principales)
+8. 🔔 [Notificaciones y Alertas de Telegram](#-notificaciones-y-alertas-de-telegram)
+9. ⚠️ [Aspectos Clave a Tener en Cuenta](#️-aspectos-clave-a-tener-en-cuenta)
+10. 📚 [Documentación Detallada](#-documentación-detallada)
+11. ⚖️ [Aviso Legal y Marcas](#️-aviso-legal-y-marcas)
+12. 📄 [Licencia](#-licencia)
 
 ---
 
 ## 🌟 Características Principales
 
-* 🚀 **Ligero y Nativo en Go:** Imagen Docker de solo **~20 MB** y consumo de apenas **~6.5 MB de RAM** (ejecutado sin privilegios *non-root*).
-* 🔄 **WebDAV Completo (RFC 4918) + Cuotas Virtuales:** Compatible con `PROPFIND`, `PUT` en streaming, `GET`/`HEAD` con `Range`, `MKCOL`, `DELETE`, `MOVE`, `COPY`, bloqueos `LOCK`/`UNLOCK` y espacio virtual RFC 4331 para HyperBackup y Duplicati.
+* 🚀 **Ligero y Sin Dependencias:** Desarrollado en **Go**, se compila en un único binario autónomo sin librerías externas, por lo que puede ejecutarse directamente en **Windows, macOS o Linux** o desplegarse mediante su imagen **Docker** oficial de apenas **~20 MB** y un consumo ligero de solo **~6.5 MB de RAM** (ejecutado sin privilegios *non-root*).
+* 🔄 **WebDAV Completo (RFC 4918) + Cuotas Virtuales:** Compatible con `PROPFIND`, `PUT` en streaming, `GET`/`HEAD` con `Range`, `MKCOL`, `DELETE`, `MOVE`, `COPY`, bloqueos `LOCK`/`UNLOCK` y espacio virtual (RFC 4331) para **Synology HyperBackup** y **Duplicati**.
 * 🚦 **Control de Concurrencia y Resiliencia WAF:** Gestiona subidas y descargas paralelas (`2` subidas / `4` descargas por defecto), huella TLS adaptada y protección frente a colisiones de nombres o bloqueos de CloudFront.
-* 🔔 **Alertas de Telegram desde el Arranque (v2.5.6):** Notificaciones automáticas desde el primer segundo si configuras `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` (aviso de inicio, cuenta sin vincular, caducidad de sesión o fallos críticos), sin necesidad de abrir antes el panel web.
-* 🌐 **Explorador Web Ágil (`:5050`) y Sesión Compartida:** Activo por defecto desde la `v2.7.0` (incluso con `GALLERY_ENABLED=false`). Permite navegar por tus carpetas («Mis Archivos»), buscar al instante, crear carpetas, subir archivos por **Drag & Drop**, descargar, renombrar, borrar y ver fotos/vídeos con visor multimedia 100 % offline, compartiendo sesión desde **📁 Explorador** en el Dashboard (`:5000`).
-* 🖼️ **Galería Virtual (`/_gallery`):** Carpeta virtual opcional para listar, descargar, subir y borrar fotos y vídeos sueltos de la Galería (`folder_id = 0`) clasificados automáticamente por fecha (`AAAA/MM`).
+* 🔔 **[Alertas de Telegram](#-notificaciones-y-alertas-de-telegram) desde el Arranque**: Notificaciones automáticas desde el primer segundo (`v2.5.6`) si configuras `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` (aviso de inicio, cuenta sin vincular, caducidad de sesión, fallos críticos...), sin necesidad de abrir antes el panel web.
+* 🌐 **[Explorador Web](#-explorador-web-5050):** Interfaz web para navegación de carpetas y gestión de archivos (`:5050`). Activo por defecto desde la `v2.7.0` (incluso con `GALLERY_ENABLED=false`). Permite navegar por tus carpetas («Mis Archivos»), buscar al instante, crear carpetas, subir archivos por **Drag & Drop**, descargar, renombrar, borrar y ver fotos/vídeos con visor multimedia 100 % offline, compartiendo sesión desde **📁 Explorador** en el Dashboard (`:5000`).
+* 🖼️ **[Galería Virtual](#-galería-virtual--opcional):** Organización visual de archivos multimedia por fecha. Carpeta virtual opcional (`/_gallery`) para listar, descargar, subir y borrar fotos y vídeos sueltos de la Galería (`folder_id = 0`) clasificados automáticamente por fecha (`AAAA/MM`).
 * 🌐 **Modo Web Opcional:** Alternativa basada en la sesión web oficial (`micloud.movistar.es`) con renovación automática cada 24 h si el flujo OAuth del cliente de escritorio falla. Ver [docs/web-mode.md](docs/web-mode.md).
-* 🍓 **Ligero también en equipos pequeños:**
+* 🍓 **Optimizado para hardware reducido:** Ligero también en equipos pequeños:
   * cola de subidas común con contrapresión y prioridades;
   * subida directa opcional sin nada en disco (`WEBDAV_UPLOAD_SPOOL=false`);
   * TLS con ChaCha20 en procesadores sin AES por hardware;
   * conexiones muertas cerradas en un minuto (`TCP_USER_TIMEOUT`).
-* 📊 **Informe de copias desde el cliente:** un script con rclone puede informar de su progreso para verlo en el panel y recibir un resumen por Telegram al terminar ([cómo usarlo](docs/configuration.md#-9-conexiones-e-informe-de-copias)).
-* 🧹 **Filtro de Basura del SO y Panel de Transferencias:** Absorbe automáticamente archivos ocultos del sistema (`.DS_Store`, `desktop.ini`, `thumbs.db`) y muestra velocidad, progreso y logs en tiempo real desde la interfaz web.
+* 📊 **Informe de copias:** Integración con herramientas de sincronización externa desde el cliente. Un script con rclone puede informar de su progreso para verlo en el panel y recibir un resumen por Telegram al terminar ([cómo usarlo](docs/configuration.md#-9-conexiones-e-informe-de-copias)).
+* 🧹 **Filtro y Monitorización:** Limpieza automática de archivos temporales ([Filtro de Basura del SO](docs/configuration.md#-7-filtro-inteligente-de-basura-del-so--devnull-absorber)) y Panel de Transferencias. Absorbe automáticamente ficheros ocultos del sistema (`.DS_Store`, `desktop.ini`, `thumbs.db`) y dispone de un panel de **Actividad en curso** que muestra la velocidad y el progreso de las transferencias (permitiendo **limitar el ancho de banda**), además de registros (*logs*) en tiempo real desde la interfaz web.
 
 ---
 
@@ -59,6 +64,9 @@ Proxy WebDAV nativo de alto rendimiento escrito en **Go** que traduce peticiones
 
 > [!TIP]
 > **¿Prefieres configurarlo sin editar YAML a mano?** Usa el **[Generador Web Interactivo](https://uniextra.github.io/MovistarWebDAVProxy/)** para elegir tus opciones (Galería, Telegram, baja RAM, Modo Web, proxy inverso, Rclone/Synology/Duplicati) y copiar o descargar tu `docker-compose.yml`, `docker run` o `.env` listo para usar *(100 % local en tu navegador)*.
+
+> [!NOTE]
+> Para consultar la lista completa de variables de entorno avanzadas (concurrencia, límites de subida, caché, TLS, proxy inverso, etc.), revisa la guía de **[Configuración Avanzada (docs/configuration.md)](docs/configuration.md#-1-tabla-completa-de-variables-de-entorno)**.
 
 ### Opción 1: Docker Compose (Recomendado)
 
@@ -140,9 +148,9 @@ docker run -d \
 
 1. Abre tu navegador y entra al panel de control: `http://IP_DE_TU_SERVIDOR:5000`.
 2. Inicia sesión con tus credenciales (`WEBDAV_USER` / `WEBDAV_PASSWORD`, o `WEBUI_*` si las definiste).
-3. Haz clic en **"Vincular Dispositivo (OAuth2 SMS)"**, elige **Movistar Cloud** u **O2 Cloud** e introduce tu número de móvil.
-4. Pulsa **"Abrir Página de Login en Nueva Pestaña"**, accede al portal oficial de Telefónica e introduce el código SMS recibido.
-5. Copia la URL final redirigida (ej. `https://micloud.movistar.es/...code=...`), pégala en el panel y pulsa **"Completar Vinculación"**.
+3. En la sección **📱 Dispositivo & Cuenta**, elige **Movistar Cloud** u **O2 Cloud**, introduce tu número de móvil y haz clic en el botón verde **"Vincular Dispositivo (OAuth2 SMS)"**.
+4. Se abrirá el diálogo **Vinculación Oficial de Movistar Cloud**. Pulsa **"Abrir Login"** para ir al portal oficial de Telefónica, introduce de nuevo tu número de móvil y pulsa **"Acceder"**. Recibirás por SMS un código de 6 dígitos; introdúcelo y pulsa **"Validar"** para continuar.
+5. Una vez identificado, copia la URL final redirigida (ej. `https://micloud.movistar.es/...code=...`), pégala en el cuadro **"Pegar URL final o Código de autorización"** del panel y pulsa **"Validar y Guardar Credenciales"**.
 6. ¡Listo! El servidor WebDAV quedará activo en el puerto `5050`.
 
 ### Opción B (Alternativa): Modo Web con navegador integrado
@@ -165,7 +173,8 @@ Abre el panel web (`:5000`), pulsa **🔐 Abrir inicio de sesión**, entra con *
 * **Duplicati:** Tipo de almacenamiento `WebDAV` → Servidor `TU_IP`, puerto `5050` → Ruta `Duplicati_Server`.
 * **Rclone:** Configura un remoto `type = webdav` con `vendor = owncloud` apuntando a `http://TU_IP:5050`. Si vas a subir archivos individuales de **más de 4 GB**, añade el overlay `chunker` (y opcionalmente `crypt`).
 
-👉 **Paso a paso, capturas y configuración completa de Rclone (`chunker` + `crypt`) en [docs/backup-clients.md](docs/backup-clients.md).**
+👉 **Tutorial paso a paso para Synology HyperBackup, Duplicati y configuración completa (con capturas) de Rclone (`chunker` + `crypt`) en [docs/backup-clients.md](docs/backup-clients.md).**
+
 
 ### 💻 Mapear como Unidad de Red
 
@@ -189,10 +198,11 @@ Desde la versión **`v2.7.0`**, el explorador web viene **activo por defecto** e
 * **Vista en modo listado 100 % offline + visor multimedia:** Tabla ligera y rápida (sin miniaturas pesadas de imágenes), búsqueda instantánea (`/`), filtro por tipo, ordenación por columnas y *breadcrumbs*. Al abrir cualquier foto o vídeo se muestra en un **visor integrado** para avanzar o retroceder entre ellos (`‹` / `›` y teclas `←` / `→`) sin salir del explorador.
 
 ![Explorador Web integrado en el puerto 5050](docs/images/web-explorer-5050.png)
+*Captura de pantalla del Explorador Web integrado en el puerto `:5050`.*
 
 ---
 
-## 🖼️ Galería Virtual (`/_gallery`) — Opcional
+## 🖼️ Galería Virtual — Opcional
 
 Si además activas **`GALLERY_ENABLED=true`**, aparece tanto en WebDAV como en el Explorador Web la carpeta **`/_gallery`** con las fotos y vídeos de tu Galería que no pertenecen a carpetas de «Mis Archivos» (`folder_id = 0`).
 
@@ -209,7 +219,8 @@ Si además activas **`GALLERY_ENABLED=true`**, aparece tanto en WebDAV como en e
 
 ---
 
-## ⚙️ Variables de Entorno Principales y Alertas de Telegram
+
+## ⚙️ Variables de Entorno Principales
 
 Estas son las variables habituales para el primer despliegue:
 
@@ -230,14 +241,20 @@ Estas son las variables habituales para el primer despliegue:
 | `TOKENS_ENCRYPTION_KEY` | *(vacío)* | Clave maestra opcional para cifrar con **AES-256-GCM** los tokens guardados en disco. |
 | `TZ` | `Europe/Madrid` | Zona horaria del contenedor para logs y alertas. |
 
-### 🔔 Notificaciones de Telegram (PR #53)
-
-Al incluir `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` en tu `docker-compose.yml`, el notificador global queda activo desde el arranque sin tener que entrar primero al panel web:
-* **Arranque y estado inicial:** Notifica cuando el proxy inicia y avisa si la cuenta aún está pendiente de vinculación o de inicio de sesión web.
-* **Errores y caducidad:** Avisa ante fallos críticos de inicialización o cuando la sesión de Movistar/O2 caduca (con límite antispam de 1 hora por alerta).
-* **Prioridad y respaldo:** Si configuras Telegram desde el panel web, esas credenciales se guardan en `/app/tokens`; si desvinculas la cuenta, el proxy vuelve a usar automáticamente los valores de entorno de Docker.
-
 👉 **Consulta la referencia completa de variables avanzadas (`SAPI_USER_AGENT`, `DESKTOP_USER_AGENT`, `TRUSTED_PROXIES`, `WEBDAV_TMPDIR`, concurrencia), configuración de Nginx Reverse Proxy y detalles de seguridad en [docs/configuration.md](docs/configuration.md).**
+
+---
+
+## 🔔 Notificaciones y Alertas de Telegram
+
+Recuerda incluir `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` en tu `docker-compose.yml` para que el notificador global quede activo desde el arranque y te avise automáticamente sobre el estado del servicio y tus copias sin tener que entrar primero al panel web para poder enviar las alertas:
+
+* **Arranque y estado de cuenta:** Confirmación de inicio del proxy y avisos de fallos al arrancar o si la cuenta requiere vinculación OAuth2 o inicio de sesión web.
+* **Sesión y errores:** Alertas de fallos críticos, caducidad de sesión de Movistar/O2 (con antispam de 1 hora) o pérdida y recuperación de sesión web tras más de 2 minutos.
+* **Límites de la nube:** Avisos por errores de tamaño de archivo (`MED-1048`), límite de carpetas de la cuenta (`FOL-1035`) o ráfagas de errores de escritura (10 fallos en 10 minutos).
+* **Resumen de copias `rclone`:** Envío de reportes de `rclone` (tamaño, velocidad, duración y errores por carpeta) al terminar o si cesa la actividad durante 10 minutos, si se configura.
+
+👉 **Más detalles 🤖 en [docs/configuration.md](docs/configuration.md#-2-sistema-de-alertas-por-telegram).**
 
 ---
 
@@ -245,7 +262,7 @@ Al incluir `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` en tu `docker-compose.yml`,
 
 1. **📦 Límite de 4 GB por archivo en Movistar / O2 Cloud:** La API de Telefónica rechaza archivos individuales mayores de **4 GB (4096 MB)**. **Duplicati** y **HyperBackup** dividen los datos automáticamente en bloques pequeños; para archivos grandes sueltos con **Rclone**, usa [`chunker`](docs/backup-clients.md#-configuración-avanzada-archivos-de-más-de-4-gb-chunker-y-cifrado-crypt).
 2. **🧹 Limpieza automática de archivos del SO:** El proxy absorbe sin subir a la nube ficheros temporales de sistema como `.DS_Store`, `._*`, `desktop.ini`, `thumbs.db`, `$RECYCLE.BIN` o `.Trash-*`.
-3. **🔒 Acceso remoto seguro:** No expongas los puertos `:5000` o `:5050` directamente a Internet sin cifrado. Si necesitas acceso externo, usa una VPN (WireGuard / Tailscale) o un proxy inverso con **HTTPS** configurado según [docs/configuration.md](docs/configuration.md#-6-topologías-de-red-docker-y-proxies-inversos).
+3. **🔒 Acceso remoto seguro:** **Nunca expongas los puertos `:5000` o `:5050` directamente a Internet.** Si necesitas acceso externo la opción más segura es usar una **VPN** (WireGuard / Tailscale) para conectarte como si estuvieras en casa. Si optas por un **proxy inverso con HTTPS**, asegúrate de mantenerlo **debidamente protegido** (contraseñas robustas en WEBDAV_PASSWORD/WEBUI_PASSWORD, filtrado por IP o autenticación adicional como Authelia/Authentik, evitando exponer públicamente el panel de gestión `:5000`) siguiendo [docs/configuration.md](docs/configuration.md#-6-topologías-de-red-docker-y-proxies-inversos).
 
 ---
 
